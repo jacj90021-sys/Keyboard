@@ -91,8 +91,14 @@ class PaperLimeInputMethodService : InputMethodService(),
                     palette = palette,
                     prefs = prefs,
                     onCommitText = { text ->
-                        runCatching { currentInputConnection?.commitText(text, 1) }
-                            .onFailure { Log.e(TAG, "commitText failed", it) }
+                        runCatching {
+                            val ic = currentInputConnection
+                            if (ic != null) {
+                                ic.beginBatchEdit()
+                                ic.commitText(text, 1)
+                                ic.endBatchEdit()
+                            }
+                        }.onFailure { Log.e(TAG, "commitText failed", it) }
                     },
                     onDelete = {
                         runCatching {
