@@ -114,6 +114,24 @@ class PaperLimeInputMethodService : InputMethodService(),
             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         )
+
+        // When the system shows the IME it re-parents this view into the IME window's
+        // hierarchy (e.g. android:id/parentPanel). Compose's WindowRecomposer is installed
+        // from a ViewTreeLifecycleOwner discovered by walking UP that parent chain; if the
+        // owner was set only on this view instance once, later attaches into a new system
+        // parent can still fail with "ViewTreeLifecycleOwner not found" (see the crash trace
+        // from Telegram). Re-assert ownership on every attach so the owner is always reachable
+        // from whatever parent the IME window builds.
+        composeView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                v.setViewTreeLifecycleOwner(this@PaperLimeInputMethodService)
+                v.setViewTreeViewModelStoreOwner(this@PaperLimeInputMethodService)
+                v.setViewTreeSavedStateRegistryOwner(this@PaperLimeInputMethodService)
+            }
+
+            override fun onViewDetachedFromWindow(v: View) {}
+        })
+
         inputView = composeView
         return composeView
     }
