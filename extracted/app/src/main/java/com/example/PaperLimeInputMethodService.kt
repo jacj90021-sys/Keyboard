@@ -14,6 +14,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
@@ -25,6 +26,10 @@ import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
 import com.example.keyboard.PaperLimeKeyboardView
 import com.example.keyboard.getPalette
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class PaperLimeInputMethodService : InputMethodService(),
     LifecycleOwner,
@@ -38,6 +43,10 @@ class PaperLimeInputMethodService : InputMethodService(),
     private var inputView: ComposeView? = null
     private var currentInputEditorInfo: EditorInfo? = null
 
+    private lateinit var prefsRepository: KeyboardPrefsRepository
+    private val _prefs = MutableStateFlow(KeyboardPrefs())
+    val prefs: StateFlow<KeyboardPrefs> = _prefs.asStateFlow()
+
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
     override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
@@ -45,36 +54,45 @@ class PaperLimeInputMethodService : InputMethodService(),
     override fun onCreate() {
         super.onCreate()
 
-        // The IME shares its process with the launcher activity, so an uncaught throw here
-        // looks like "the app crashed" to the user. Tag it so the cause is findable.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             Log.e(TAG, "UNCAUGHT in IME thread ${thread.name}", error)
             previous?.uncaughtException(thread, error)
         }
 
-        // performRestore() requires the controller to be attached first; without
-        // performAttach() this throws IllegalArgumentException on some savedstate
-        // versions and, sharing the process with the activity, crashes the app.
         runCatching {
             savedStateRegistryController.performAttach()
             savedStateRegistryController.performRestore(null)
         }.onFailure {
             Log.e(TAG, "savedState restore failed", it)
         }
+
         runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE) }
             .onFailure { Log.e(TAG, "ON_CREATE failed", it) }
+
+        // Make the service a valid owner tree for the IME window decor before any
+        // input view is created. Compose needs all three owners reachable from
+        // the parentPanel hierarchy.
+        runCatching {
+            window.window?.decorView?.let { d ->
+                d.setViewTreeLifecycleOwner(this@PaperLimeInputMethodService)
+                d.setViewTreeViewModelStoreOwner(this@PaperLimeInputMethodService)
+                d.setViewTreeSavedStateRegistryOwner(this@PaperLimeInputMethodService)
+            }
+        }.onFailure { Log.e(TAG, "decor owner setup failed", it) }
+
+        // Collect settings in the service lifecycle so the real keyboard follows
+        // every app-side preference change.
+        prefsRepository = KeyboardPrefsRepository(this)
+        lifecycleScope.launch {
+            runCatching {
+                prefsRepository.prefs.collect { _prefs.value = it }
+            }.onFailure { Log.e(TAG, "prefs collect failed", it) }
+        }
     }
 
     override fun onCreateInputView(): View {
-        // The system reuses this service and can ask for a new input view at any time.
-        // Blindingly sending ON_START/ON_RESUME from RESUMED throws
-        // IllegalStateException("no event down from RESUMED") and, because the IME runs
-        // in the same process as the launcher activity, that takes the whole app down.
-        syncLifecycle(resumed = true)
-
-        // Reuse one view. Returning a brand new ComposeView on every request leaks the
-        // previous composition and leaves the IME window sized by an empty view.
+        // Reuse one view.
         inputView?.let { return it }
 
         val composeView = ComposeView(this).apply {
@@ -83,13 +101,12 @@ class PaperLimeInputMethodService : InputMethodService(),
             setViewTreeSavedStateRegistryOwner(this@PaperLimeInputMethodService)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                val repository = remember { KeyboardPrefsRepository(this@PaperLimeInputMethodService) }
-                val prefs by repository.prefs.collectAsState(initial = KeyboardPrefs())
-                val palette = remember(prefs.theme) { getPalette(prefs.theme) }
+                val p by this@PaperLimeInputMethodService.prefs.collectAsState()
+                val palette = remember(p.theme) { getPalette(p.theme) }
 
                 PaperLimeKeyboardView(
                     palette = palette,
-                    prefs = prefs,
+                    prefs = p,
                     onCommitText = { text ->
                         runCatching {
                             val ic = currentInputConnection
@@ -113,12 +130,10 @@ class PaperLimeInputMethodService : InputMethodService(),
                     },
                     onEnter = {
                         runCatching {
-                            val ic = currentInputConnection
-                            if (ic == null) return@runCatching
-                            val action = try {
-                                currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
-                            } catch (_: Exception) { null }
-                            if (action != null && action != EditorInfo.IME_ACTION_NONE &&
+                            val ic = currentInputConnection ?: return@runCatching
+                            val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
+                            if (action != null &&
+                                action != EditorInfo.IME_ACTION_NONE &&
                                 action != EditorInfo.IME_ACTION_UNSPECIFIED) {
                                 if (!ic.performEditorAction(action)) {
                                     ic.commitText("\n", 1)
@@ -136,13 +151,6 @@ class PaperLimeInputMethodService : InputMethodService(),
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         )
 
-        // When the system shows the IME it re-parents this view into the IME window's
-        // hierarchy (e.g. android:id/parentPanel). Compose's WindowRecomposer is installed
-        // from a ViewTreeLifecycleOwner discovered by walking UP that parent chain; if the
-        // owner was set only on this view instance once, later attaches into a new system
-        // parent can still fail with "ViewTreeLifecycleOwner not found" (see the crash trace
-        // from Telegram). Re-assert ownership on every attach so the owner is always reachable
-        // from whatever parent the IME window builds.
         composeView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v: View) {
                 v.setViewTreeLifecycleOwner(this@PaperLimeInputMethodService)
@@ -157,20 +165,6 @@ class PaperLimeInputMethodService : InputMethodService(),
         return composeView
     }
 
-    /**
-     * Without this the keyboard silently never appears on any device that reports a
-     * hardware keyboard (the default emulator AVD, ChromeOS, DeX, tablets and phones
-     * with a Bluetooth/USB keyboard attached): [InputMethodService]'s default
-     * implementation returns false in that case and Android suppresses the soft
-     * keyboard on EVERY input-source change. Nothing crashes, so the IME is also never
-     * asked for a view. Always showing the keyboard is the behaviour this keyboard is
-     * expected to have.
-     *
-     * `super` is deliberately NOT called: its return value is precisely the hardware
-     * keyboard suppression being overridden here, so there is nothing to combine with.
-     * The behaviour is pinned by ImeHardwareKeyboardTest.
-     */
-    @SuppressLint("MissingSuperCall")
     override fun onEvaluateInputViewShown(): Boolean = true
 
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
@@ -181,44 +175,21 @@ class PaperLimeInputMethodService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         currentInputEditorInfo = info
-        // A text field became focused: our view is being shown.
-        syncLifecycle(resumed = true)
+        runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START) }
+        runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME) }
     }
 
     override fun onFinishInputView(finishing: Boolean) {
         super.onFinishInputView(finishing)
-        syncLifecycle(resumed = false)
-    }
-
-    /**
-     * Moves [lifecycleRegistry] to RESUMED (or back down to CREATED) without ever
-     * emitting an event that LifecycleRegistry rejects. Guards against repeated
-     * onCreateInputView / onStartInputView calls from the system.
-     */
-    private fun syncLifecycle(resumed: Boolean) {
         runCatching {
-            val state = lifecycleRegistry.currentState
-            if (resumed) {
-                if (state == Lifecycle.State.RESUMED) return@runCatching
-                if (state.isAtLeast(Lifecycle.State.STARTED)) {
-                    lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
-                }
-                if (state.isAtLeast(Lifecycle.State.STARTED)) {
-                    lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
-                }
-                lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-                lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-            } else {
-                if (state == Lifecycle.State.CREATED) return@runCatching
-                if (state == Lifecycle.State.RESUMED) {
-                    lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
-                }
-                if (state.isAtLeast(Lifecycle.State.STARTED)) {
-                    lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
-                }
+            if (lifecycleRegistry.currentState == Lifecycle.State.RESUMED) {
+                lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
             }
-        }.onFailure {
-            Log.e(TAG, "Lifecycle sync failed (resumed=$resumed)", it)
+        }
+        runCatching {
+            if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+            }
         }
     }
 
