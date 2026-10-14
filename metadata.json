@@ -1,0 +1,6 @@
+{
+  "name": "Paper + Lime Keyboard",
+  "description": "Paper + Lime soft keyboard featuring full QWERTY, numeric shortcuts, symbols, compact numpad, Fn keys, floating toolbar, and action center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
