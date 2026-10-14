@@ -8,6 +8,7 @@ import android.view.KeyEvent
 import android.view.View
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -35,6 +36,7 @@ class PaperLimeInputMethodService : InputMethodService(),
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
 
     private var inputView: ComposeView? = null
+    private var currentInputEditorInfo: EditorInfo? = null
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -79,6 +81,7 @@ class PaperLimeInputMethodService : InputMethodService(),
             setViewTreeLifecycleOwner(this@PaperLimeInputMethodService)
             setViewTreeViewModelStoreOwner(this@PaperLimeInputMethodService)
             setViewTreeSavedStateRegistryOwner(this@PaperLimeInputMethodService)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val repository = remember { KeyboardPrefsRepository(this@PaperLimeInputMethodService) }
                 val prefs by repository.prefs.collectAsState(initial = KeyboardPrefs())
@@ -88,24 +91,36 @@ class PaperLimeInputMethodService : InputMethodService(),
                     palette = palette,
                     prefs = prefs,
                     onCommitText = { text ->
-                        currentInputConnection?.commitText(text, 1)
+                        runCatching { currentInputConnection?.commitText(text, 1) }
+                            .onFailure { Log.e(TAG, "commitText failed", it) }
                     },
                     onDelete = {
-                        val ic = currentInputConnection
-                        val selected = ic?.getSelectedText(0)
-                        if (selected.isNullOrEmpty()) {
-                            ic?.deleteSurroundingText(1, 0)
-                        } else {
-                            ic.commitText("", 1)
-                        }
+                        runCatching {
+                            val ic = currentInputConnection
+                            val selected = ic?.getSelectedText(0)
+                            if (selected.isNullOrEmpty()) {
+                                ic?.deleteSurroundingText(1, 0)
+                            } else {
+                                ic?.commitText("", 1)
+                            }
+                        }.onFailure { Log.e(TAG, "delete failed", it) }
                     },
                     onEnter = {
-                        currentInputConnection?.sendKeyEvent(
-                            KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
-                        )
-                        currentInputConnection?.sendKeyEvent(
-                            KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER)
-                        )
+                        runCatching {
+                            val ic = currentInputConnection
+                            if (ic == null) return@runCatching
+                            val action = try {
+                                currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
+                            } catch (_: Exception) { null }
+                            if (action != null && action != EditorInfo.IME_ACTION_NONE &&
+                                action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+                                if (!ic.performEditorAction(action)) {
+                                    ic.commitText("\n", 1)
+                                }
+                            } else {
+                                ic.commitText("\n", 1)
+                            }
+                        }.onFailure { Log.e(TAG, "enter failed", it) }
                     }
                 )
             }
@@ -152,8 +167,14 @@ class PaperLimeInputMethodService : InputMethodService(),
     @SuppressLint("MissingSuperCall")
     override fun onEvaluateInputViewShown(): Boolean = true
 
+    override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(info, restarting)
+        currentInputEditorInfo = info
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        currentInputEditorInfo = info
         // A text field became focused: our view is being shown.
         syncLifecycle(resumed = true)
     }
