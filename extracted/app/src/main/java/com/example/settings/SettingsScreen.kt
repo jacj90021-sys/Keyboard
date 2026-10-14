@@ -1,6 +1,7 @@
 package com.example.settings
 
 import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -13,26 +14,28 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
-import com.example.keyboard.getPalette
 import com.example.ui.theme.DmSans
 import com.example.ui.theme.Manrope
 import com.example.ui.theme.Tokens
@@ -52,7 +55,29 @@ fun SettingsScreen(
     onOpenPage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    var showTry by remember { mutableStateOf(false) }
+    var tryOpen by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var text by remember { mutableStateOf("") }
+
+    LaunchedEffect(tryOpen) {
+        if (tryOpen) {
+            try { focusRequester.requestFocus() } catch (_: Exception) { }
+            keyboardController?.show()
+        }
+    }
+
+    BackHandler(enabled = tryOpen) {
+        keyboardController?.hide()
+        tryOpen = false
+        text = ""
+    }
+
+    val closeTry: () -> Unit = {
+        keyboardController?.hide()
+        tryOpen = false
+        text = ""
+    }
 
     val entries = listOf(
         SettingsEntry("Languages & layouts", "Choose languages and keyboard layouts", Icons.Default.Language, "languages", "English (US)"),
@@ -100,205 +125,166 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .widthIn(max = 460.dp)
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 21.dp, end = 21.dp, top = 27.dp, bottom = 110.dp)
+                .fillMaxSize()
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                BrandMark(size = 34)
-                Text(
-                    text = "Keyboard",
-                    color = Tokens.Ink,
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 28.sp,
-                    letterSpacing = (-1).sp
-                )
-            }
-
-            // Popular settings
+            // Scrollable settings content.
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(Tokens.Surface)
-                    .border(1.dp, Tokens.Line, RoundedCornerShape(26.dp))
-                    .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 12.dp)
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .statusBarsPadding()
+                    .padding(start = 21.dp, end = 21.dp, top = 27.dp, bottom = 16.dp)
             ) {
-                Text(
-                    text = "Popular settings",
-                    color = Tokens.Ink,
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 19.sp,
-                    letterSpacing = (-0.5).sp,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    tiles.chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            row.forEach { (type, label, key) ->
-                                PopularTile(
-                                    type = type,
-                                    label = label,
-                                    selected = valueOf(key),
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { scope.launch { repository.setBool(key, !valueOf(key)) } }
-                                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    BrandMark(size = 34)
+                    Text(
+                        text = "Keyboard",
+                        color = Tokens.Ink,
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 28.sp,
+                        letterSpacing = (-1).sp
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(Tokens.Surface)
+                        .border(1.dp, Tokens.Line, RoundedCornerShape(26.dp))
+                        .padding(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 12.dp)
+                ) {
+                    Text(
+                        text = "Popular settings",
+                        color = Tokens.Ink,
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 19.sp,
+                        letterSpacing = (-0.5).sp,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 12.dp)
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        tiles.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                row.forEach { (type, label, key) ->
+                                    PopularTile(
+                                        type = type,
+                                        label = label,
+                                        selected = valueOf(key),
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { scope.launch { repository.setBool(key, !valueOf(key)) } }
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
 
-            // Settings list
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(21.dp))
-                    .background(Tokens.Surface)
-                    .border(1.dp, Tokens.Line, RoundedCornerShape(21.dp))
-            ) {
-                entries.forEachIndexed { i, e ->
-                    if (i > 0) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .padding(start = 65.dp, end = 17.dp)
-                                .background(Tokens.Line)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(21.dp))
+                        .background(Tokens.Surface)
+                        .border(1.dp, Tokens.Line, RoundedCornerShape(21.dp))
+                ) {
+                    entries.forEachIndexed { i, e ->
+                        if (i > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .padding(start = 65.dp, end = 17.dp)
+                                    .background(Tokens.Line)
+                            )
+                        }
+                        SettingRow(
+                            icon = e.icon,
+                            title = e.title,
+                            subtitle = e.subtitle,
+                            trailingValue = e.trailing,
+                            onClick = { onOpenPage(e.pageId) }
                         )
                     }
-                    SettingRow(
-                        icon = e.icon,
-                        title = e.title,
-                        subtitle = e.subtitle,
-                        trailingValue = e.trailing,
-                        onClick = { onOpenPage(e.pageId) }
+                }
+            }
+
+            if (tryOpen) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(androidx.compose.ui.graphics.Color(0xFFF3F1E8))
+                        .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(androidx.compose.ui.graphics.Color(0xFFE9E6DC))
+                    )
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        maxLines = 3,
+                        textStyle = TextStyle(
+                            fontSize = 16.sp,
+                            color = Tokens.Ink,
+                            fontFamily = DmSans
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            .heightIn(min = 56.dp)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        decorationBox = { innerTextField ->
+                            if (text.isEmpty()) {
+                                Text(
+                                    text = "Type here to try your keyboard",
+                                    color = Tokens.Muted,
+                                    fontSize = 16.sp,
+                                    fontFamily = DmSans
+                                )
+                            }
+                            innerTextField()
+                        }
                     )
                 }
             }
+
+            // Floating button
+            // (placed via overlay below to stay pinned)
         }
 
-        // Floating keyboard button
+        val buttonBottom = if (tryOpen) 72.dp else 22.dp
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 18.dp, bottom = 22.dp)
+                .padding(end = 18.dp, bottom = buttonBottom)
                 .size(58.dp)
                 .shadow(12.dp, RoundedCornerShape(20.dp), clip = false)
                 .clip(RoundedCornerShape(20.dp))
                 .background(Tokens.Lime)
-                .clickable { showTry = true },
+                .clickable {
+                    if (tryOpen) closeTry() else tryOpen = true
+                },
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Keyboard,
+                imageVector = if (tryOpen) Icons.Default.KeyboardArrowDown else Icons.Default.Keyboard,
                 contentDescription = "Try your keyboard",
                 tint = Tokens.Ink,
                 modifier = Modifier.size(26.dp)
             )
         }
-
-        // Try keyboard panel
-        TryKeyboardPanel(
-            prefs = prefs,
-            visible = showTry,
-            onClose = { showTry = false }
-        )
     }
 }
-
-@Composable
-private fun BoxScope.TryKeyboardPanel(
-    prefs: KeyboardPrefs,
-    visible: Boolean,
-    onClose: () -> Unit
-) {
-    var text by remember { mutableStateOf("") }
-    val palette = remember(prefs.theme) { getPalette(prefs.theme) }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically { it } + fadeIn(),
-        exit = slideOutVertically { it } + fadeOut(),
-        modifier = Modifier.align(Alignment.BottomCenter)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 460.dp)
-                .shadow(16.dp, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), clip = false)
-                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .background(Tokens.Surface)
-                .border(1.dp, Tokens.Line, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .padding(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Try your keyboard",
-                    color = Tokens.Ink,
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 15.sp
-                )
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(Tokens.Chip)
-                        .clickable { onClose() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Close",
-                        tint = Tokens.Ink,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-
-            val keyboardController = LocalSoftwareKeyboardController.current
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("Type here to try your keyboard", color = Tokens.Muted) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { focusState ->
-                        if (focusState.isFocused) keyboardController?.show()
-                    },
-                shape = RoundedCornerShape(16.dp),
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Tokens.Ink,
-                    unfocusedBorderColor = Tokens.Line,
-                    focusedContainerColor = Tokens.Surface,
-                    unfocusedContainerColor = Tokens.Surface
-                )
-            )
-
-            Spacer(Modifier.height(6.dp))
-        }
-    }
-}
-
 
 @Composable
 fun PlaceholderPage(title: String, onBack: () -> Unit) {

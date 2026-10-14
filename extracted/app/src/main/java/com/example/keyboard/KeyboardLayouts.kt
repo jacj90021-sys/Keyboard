@@ -25,7 +25,6 @@ fun NumberRowView(
             SoftKey(
                 text = digit.toString(),
                 palette = palette,
-                fontSize = 13,
                 keyHeight = config.keyHeight * 0.8f,
                 showPopup = config.showPopups,
                 modifier = Modifier.weight(1f),
@@ -140,7 +139,6 @@ fun QwertyLayoutView(
                 text = "?123",
                 palette = palette,
                 style = KeyStyle.SPECIAL,
-                fontSize = 14,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1.4f),
                 onClick = onSymbolsClick
@@ -161,7 +159,6 @@ fun QwertyLayoutView(
                     palette = palette,
                     style = KeyStyle.SPECIAL,
                     isArmed = isFnLongActive,
-                    fontSize = 14,
                     keyHeight = config.keyHeight,
                     modifier = Modifier.weight(0.9f),
                     onClick = onFnClick,
@@ -172,7 +169,6 @@ fun QwertyLayoutView(
             SoftKey(
                 text = "English (US)",
                 palette = palette,
-                fontSize = 13,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(3.5f),
                 onClick = onSpaceClick,
@@ -192,7 +188,6 @@ fun QwertyLayoutView(
                 text = "↵",
                 palette = palette,
                 style = KeyStyle.LIME,
-                fontSize = 20,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1.4f),
                 onClick = onEnterClick
@@ -270,7 +265,6 @@ fun SymbolsLayoutView(
                 text = if (page == 1) "=\\<" else "?123",
                 palette = palette,
                 style = KeyStyle.SPECIAL,
-                fontSize = 13,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1.3f),
                 onClick = onSwitchPage
@@ -303,7 +297,6 @@ fun SymbolsLayoutView(
                 text = "ABC",
                 palette = palette,
                 style = KeyStyle.SPECIAL,
-                fontSize = 13,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1.4f),
                 onClick = onLettersClick
@@ -322,7 +315,6 @@ fun SymbolsLayoutView(
                 text = "12\n34",
                 palette = palette,
                 style = KeyStyle.NUMPAD_SWITCH,
-                fontSize = 10,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(0.9f),
                 onClick = onNumpadClick
@@ -331,7 +323,6 @@ fun SymbolsLayoutView(
             SoftKey(
                 text = "English (US)",
                 palette = palette,
-                fontSize = 13,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(3.5f),
                 onClick = onSpaceClick
@@ -350,7 +341,6 @@ fun SymbolsLayoutView(
                 text = "↵",
                 palette = palette,
                 style = KeyStyle.LIME,
-                fontSize = 20,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1.4f),
                 onClick = onEnterClick
@@ -405,7 +395,6 @@ fun NumpadLayoutView(
                 text = "ABC",
                 palette = palette,
                 style = KeyStyle.SPECIAL,
-                fontSize = 12,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1f),
                 onClick = onLettersClick
@@ -413,7 +402,7 @@ fun NumpadLayoutView(
 
             Row(modifier = Modifier.weight(1f)) {
                 SoftKey(text = ",", palette = palette, style = KeyStyle.SPECIAL, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(",") })
-                SoftKey(text = "?123", palette = palette, style = KeyStyle.NUMPAD_SWITCH, fontSize = 10, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = onSymbolsClick)
+                SoftKey(text = "?123", palette = palette, style = KeyStyle.NUMPAD_SWITCH, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = onSymbolsClick)
             }
 
             SoftKey(text = "0", palette = palette, keyHeight = config.keyHeight, showPopup = config.showPopups, modifier = Modifier.weight(1f), onClick = { onKeyClick("0") })
@@ -427,7 +416,6 @@ fun NumpadLayoutView(
                 text = "↵",
                 palette = palette,
                 style = KeyStyle.LIME,
-                fontSize = 22,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1f),
                 onClick = onEnterClick
@@ -453,14 +441,14 @@ fun FnKeysLayoutView(
         // Row 1: F1 - F8
         Row(modifier = Modifier.fillMaxWidth()) {
             listOf("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8").forEach { f ->
-                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, fontSize = 12, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
+                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
             }
         }
 
         // Row 2: F9 - F12, Del, PgUp, PgDn
         Row(modifier = Modifier.fillMaxWidth()) {
             listOf("F9", "F10", "F11", "F12", "Del", "PgUp", "PgDn").forEach { f ->
-                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, fontSize = 12, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
+                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
             }
         }
 
@@ -468,19 +456,19 @@ fun FnKeysLayoutView(
         Row(modifier = Modifier.fillMaxWidth()) {
             SoftKey(text = "⇧", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1.2f), onClick = {})
             listOf("Ins", "Psc", "Brk", "Scrl", "Numl", "Win", "Syrc").forEach { f ->
-                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, fontSize = 12, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
+                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
             }
             SoftKey(text = "⌫", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1.2f), onClick = onBackspaceClick)
         }
 
         // Row 4
         Row(modifier = Modifier.fillMaxWidth()) {
-            SoftKey(text = "ABC", palette = palette, style = KeyStyle.REGULAR, fontSize = 13, keyHeight = config.keyHeight, modifier = Modifier.weight(1.4f), onClick = onLettersClick)
+            SoftKey(text = "ABC", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1.4f), onClick = onLettersClick)
             SoftKey(text = ",", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(0.9f), onClick = { onKeyClick(",") })
-            SoftKey(text = "Fn", palette = palette, style = KeyStyle.LIME, fontSize = 14, keyHeight = config.keyHeight, modifier = Modifier.weight(0.9f), onClick = onLettersClick)
-            SoftKey(text = "English (US)", palette = palette, fontSize = 13, keyHeight = config.keyHeight, modifier = Modifier.weight(3.5f), onClick = onSpaceClick)
+            SoftKey(text = "Fn", palette = palette, style = KeyStyle.LIME, keyHeight = config.keyHeight, modifier = Modifier.weight(0.9f), onClick = onLettersClick)
+            SoftKey(text = "English (US)", palette = palette, keyHeight = config.keyHeight, modifier = Modifier.weight(3.5f), onClick = onSpaceClick)
             SoftKey(text = ".", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(0.9f), onClick = { onKeyClick(".") })
-            SoftKey(text = "↵", palette = palette, style = KeyStyle.LIME, fontSize = 20, keyHeight = config.keyHeight, modifier = Modifier.weight(1.4f), onClick = onEnterClick)
+            SoftKey(text = "↵", palette = palette, style = KeyStyle.LIME, keyHeight = config.keyHeight, modifier = Modifier.weight(1.4f), onClick = onEnterClick)
         }
     }
 }

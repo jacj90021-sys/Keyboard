@@ -63,7 +63,7 @@ fun SoftKey(
     style: KeyStyle = KeyStyle.REGULAR,
     subText: String? = null,
     isArmed: Boolean = false,
-    fontSize: Int = 18,
+    fontSize: Int = 16,
     keyHeight: Dp = 44.dp,
     showPopup: Boolean = false,
     onClick: () -> Unit,
