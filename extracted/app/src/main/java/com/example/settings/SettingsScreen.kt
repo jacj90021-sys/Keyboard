@@ -23,6 +23,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -273,11 +275,16 @@ private fun BoxScope.TryKeyboardPanel(
             }
             Spacer(Modifier.height(10.dp))
 
+            val keyboardController = LocalSoftwareKeyboardController.current
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
                 placeholder = { Text("Type here to try your keyboard", color = Tokens.Muted) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused) keyboardController?.show()
+                    },
                 shape = RoundedCornerShape(16.dp),
                 colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Tokens.Ink,
