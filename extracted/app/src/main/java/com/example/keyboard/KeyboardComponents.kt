@@ -51,6 +51,7 @@ enum class KeyStyle {
     SPECIAL,
     LIME,
     FN,
+    NAVIGATION,
     NUMPAD_SWITCH
 }
 
@@ -64,6 +65,7 @@ fun SoftKey(
     subText: String? = null,
     isArmed: Boolean = false,
     fontSize: Int = 16,
+    fontWeight: FontWeight? = null,
     keyHeight: Dp = 44.dp,
     showPopup: Boolean = false,
     onClick: () -> Unit,
@@ -77,19 +79,27 @@ fun SoftKey(
     // there is always a clear colour flash on key press.
     val isAccent = isArmed || style == KeyStyle.LIME || isPressed
 
+    val navTint = androidx.compose.ui.graphics.lerp(palette.keyBg, palette.lime, 0.28f)
+
     val bgColor = when {
         isAccent -> palette.lime
+        style == KeyStyle.NAVIGATION -> navTint
+        style == KeyStyle.SPECIAL -> palette.specialKey
+        style == KeyStyle.NUMPAD_SWITCH -> palette.paperSubtle
         else -> palette.keyBg
     }
 
     val shadowColor = when {
-        isArmed || style == KeyStyle.LIME -> palette.limeShadow
+        isAccent -> palette.limeShadow
+        style == KeyStyle.NAVIGATION -> palette.keyShadow
+        style == KeyStyle.SPECIAL -> palette.specialShadow
         else -> palette.keyShadow
     }
 
     val textColor = when {
         isAccent -> palette.onAccent
         style == KeyStyle.SPECIAL -> palette.inkSecondary
+        style == KeyStyle.NAVIGATION -> palette.inkSecondary
         else -> palette.ink
     }
 
@@ -152,7 +162,7 @@ fun SoftKey(
                 text = text,
                 color = textColor,
                 fontSize = fontSize.sp,
-                fontWeight = if (isAccent) FontWeight.Bold else FontWeight.Medium,
+                fontWeight = fontWeight ?: if (isAccent) FontWeight.Bold else FontWeight.Medium,
                 textAlign = TextAlign.Center,
                 fontFamily = if (style == KeyStyle.FN) FontFamily.Monospace else FontFamily.Default,
                 lineHeight = 12.sp

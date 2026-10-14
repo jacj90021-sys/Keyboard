@@ -11,7 +11,8 @@ data class KeyRenderConfig(
     val keyHeight: Dp = 44.dp,
     val showSubText: Boolean = false,
     val showFnKey: Boolean = false,
-    val showPopups: Boolean = true
+    val showPopups: Boolean = true,
+    val showNumberRow: Boolean = false
 )
 
 @Composable
@@ -432,43 +433,167 @@ fun FnKeysLayoutView(
     onLettersClick: () -> Unit,
     onBackspaceClick: () -> Unit,
     onSpaceClick: () -> Unit,
-    onEnterClick: () -> Unit
+    onEnterClick: () -> Unit,
+    onShiftClick: () -> Unit = {},
+    shiftState: ShiftState = ShiftState.OFF,
+    showFnKey: Boolean = config.showFnKey
 ) {
+    val wideWeight = 1.5f
+
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Row 1: F1 - F8
-        Row(modifier = Modifier.fillMaxWidth()) {
-            listOf("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8").forEach { f ->
-                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
+        // Number row, identical to the letter layer (only when "Extra numbers row" is on).
+        if (config.showNumberRow) {
+            NumberRowView(
+                palette = palette,
+                config = config,
+                onKeyClick = onKeyClick
+            )
+        }
+
+        // Row 1 (10 slots): F1..F10. Every key is 1u.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            listOf("F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10").forEach { label ->
+                SoftKey(
+                    text = label,
+                    palette = palette,
+                    style = KeyStyle.REGULAR,
+                    keyHeight = config.keyHeight,
+                    showPopup = config.showPopups,
+                    fontSize = 12,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onKeyClick(label) }
+                )
             }
         }
 
-        // Row 2: F9 - F12, Del, PgUp, PgDn
-        Row(modifier = Modifier.fillMaxWidth()) {
-            listOf("F9", "F10", "F11", "F12", "Del", "PgUp", "PgDn").forEach { f ->
-                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
-            }
+        // Row 2, padded like a-l (9 slots): F11 F12 Del PgUp PgDn Ins Psc
+        // PgUp and PgDn are double-width (2u + gap).
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            SoftKey(text = "F11", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("F11") })
+            SoftKey(text = "F12", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("F12") })
+            SoftKey(text = "Del", palette = palette, style = KeyStyle.NAVIGATION, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("Del") })
+            SoftKey(text = "PgUp", palette = palette, style = KeyStyle.NAVIGATION, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2f), onClick = { onKeyClick("PgUp") })
+            SoftKey(text = "PgDn", palette = palette, style = KeyStyle.NAVIGATION, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2f), onClick = { onKeyClick("PgDn") })
+            SoftKey(text = "Ins", palette = palette, style = KeyStyle.NAVIGATION, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("Ins") })
+            SoftKey(text = "Psc", palette = palette, style = KeyStyle.SPECIAL, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("Psc") })
         }
 
-        // Row 3: Shift, Ins, Psc, Brk, Scrl, Numl, Win, Syrc, Backspace
-        Row(modifier = Modifier.fillMaxWidth()) {
-            SoftKey(text = "⇧", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1.2f), onClick = {})
-            listOf("Ins", "Psc", "Brk", "Scrl", "Numl", "Win", "Syrc").forEach { f ->
-                SoftKey(text = f, palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1f), onClick = { onKeyClick(f) })
-            }
-            SoftKey(text = "⌫", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1.2f), onClick = onBackspaceClick)
+        // Row 3, same as z-m (7 letter slots): Shift(wide) Brk Scrl(wide*2) Num Win Sync(wide*2) Backspace(wide)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            SoftKey(
+                text = "⇧",
+                palette = palette,
+                style = KeyStyle.SPECIAL,
+                isArmed = shiftState != ShiftState.OFF,
+                keyHeight = config.keyHeight,
+                showPopup = config.showPopups,
+                fontSize = 14,
+                modifier = Modifier.weight(wideWeight),
+                onClick = onShiftClick
+            )
+            SoftKey(text = "Brk", palette = palette, style = KeyStyle.SPECIAL, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("Brk") })
+            SoftKey(text = "Scrl", palette = palette, style = KeyStyle.SPECIAL, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 10.5f.toInt(), fontWeight = FontWeight.Bold, modifier = Modifier.weight(2f), onClick = { onKeyClick("Scrl") })
+            SoftKey(text = "Num", palette = palette, style = KeyStyle.SPECIAL, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("Num") })
+            SoftKey(text = "Win", palette = palette, style = KeyStyle.SPECIAL, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 12, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), onClick = { onKeyClick("Win") })
+            SoftKey(text = "Sync", palette = palette, style = KeyStyle.SPECIAL, keyHeight = config.keyHeight, showPopup = config.showPopups, fontSize = 10.5f.toInt(), fontWeight = FontWeight.Bold, modifier = Modifier.weight(2f), onClick = { onKeyClick("Sync") })
+            SoftKey(
+                text = "⌫",
+                palette = palette,
+                style = KeyStyle.SPECIAL,
+                keyHeight = config.keyHeight,
+                showPopup = config.showPopups,
+                fontSize = 16,
+                modifier = Modifier.weight(wideWeight),
+                onClick = onBackspaceClick
+            )
         }
 
-        // Row 4
-        Row(modifier = Modifier.fillMaxWidth()) {
-            SoftKey(text = "ABC", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(1.4f), onClick = onLettersClick)
-            SoftKey(text = ",", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(0.9f), onClick = { onKeyClick(",") })
-            SoftKey(text = "Fn", palette = palette, style = KeyStyle.LIME, keyHeight = config.keyHeight, modifier = Modifier.weight(0.9f), onClick = onLettersClick)
-            SoftKey(text = "English (US)", palette = palette, keyHeight = config.keyHeight, modifier = Modifier.weight(3.5f), onClick = onSpaceClick)
-            SoftKey(text = ".", palette = palette, style = KeyStyle.REGULAR, keyHeight = config.keyHeight, modifier = Modifier.weight(0.9f), onClick = { onKeyClick(".") })
-            SoftKey(text = "↵", palette = palette, style = KeyStyle.LIME, keyHeight = config.keyHeight, modifier = Modifier.weight(1.4f), onClick = onEnterClick)
+        // Bottom row, identical weights to the letter layer.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            SoftKey(
+                text = "ABC",
+                palette = palette,
+                style = KeyStyle.SPECIAL,
+                fontSize = 13,
+                keyHeight = config.keyHeight,
+                showPopup = config.showPopups,
+                modifier = Modifier.weight(wideWeight),
+                onClick = onLettersClick
+            )
+
+            SoftKey(
+                text = ",",
+                palette = palette,
+                style = KeyStyle.SPECIAL,
+                keyHeight = config.keyHeight,
+                showPopup = config.showPopups,
+                modifier = Modifier.weight(0.9f),
+                onClick = { onKeyClick(",") }
+            )
+
+            if (showFnKey) {
+                SoftKey(
+                    text = "Fn",
+                    palette = palette,
+                    style = KeyStyle.LIME,
+                    isArmed = true,
+                    fontSize = 13,
+                    keyHeight = config.keyHeight,
+                    showPopup = config.showPopups,
+                    modifier = Modifier.weight(0.9f),
+                    onClick = onLettersClick
+                )
+            }
+
+            SoftKey(
+                text = "English (US)",
+                palette = palette,
+                keyHeight = config.keyHeight,
+                showPopup = config.showPopups,
+                fontSize = 13,
+                modifier = Modifier.weight(3.5f),
+                onClick = onSpaceClick,
+                onSlideDrag = {}
+            )
+
+            SoftKey(
+                text = ".",
+                palette = palette,
+                style = KeyStyle.SPECIAL,
+                keyHeight = config.keyHeight,
+                showPopup = config.showPopups,
+                modifier = Modifier.weight(0.9f),
+                onClick = { onKeyClick(".") }
+            )
+
+            SoftKey(
+                text = "↵",
+                palette = palette,
+                style = KeyStyle.LIME,
+                fontSize = 20,
+                keyHeight = config.keyHeight,
+                showPopup = config.showPopups,
+                modifier = Modifier.weight(wideWeight),
+                onClick = onEnterClick
+            )
         }
     }
 }
