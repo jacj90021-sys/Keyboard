@@ -31,8 +31,7 @@ data class KeyboardTheme(
     val accentShadow: Color,
     val keyShadow: Color,
     val line: Color,
-    val muted: Color,
-    val functionKey: Color
+    val muted: Color
 )
 
 val KeyboardThemes: List<KeyboardTheme> = listOf(
@@ -46,8 +45,7 @@ val KeyboardThemes: List<KeyboardTheme> = listOf(
         accentShadow = Color(0xFFC3DF58),
         keyShadow = Color(0xFFB9B6A6),
         line = Color(0xFFE4E0D3),
-        muted = Color(0xFF77796D),
-        functionKey = Color(0xFFE3E0D2)
+        muted = Color(0xFF77796D)
     ),
     KeyboardTheme(
         id = ThemeChoice.INK,
@@ -59,8 +57,7 @@ val KeyboardThemes: List<KeyboardTheme> = listOf(
         accentShadow = Color(0xFF9EB837),
         keyShadow = Color(0xFF101109),
         line = Color(0xFF3A3D32),
-        muted = Color(0xFF9A9D8F),
-        functionKey = Color(0xFF23251E)
+        muted = Color(0xFF9A9D8F)
     ),
     KeyboardTheme(
         id = ThemeChoice.LIME,
@@ -72,8 +69,7 @@ val KeyboardThemes: List<KeyboardTheme> = listOf(
         accentShadow = Color(0xFF1B1D17),
         keyShadow = Color(0xFFB6CE55),
         line = Color(0xFFC9E45C),
-        muted = Color(0xFF6B7250),
-        functionKey = Color(0xFFBFE04C)
+        muted = Color(0xFF6B7250)
     ),
     KeyboardTheme(
         id = ThemeChoice.BLUSH,
@@ -85,8 +81,7 @@ val KeyboardThemes: List<KeyboardTheme> = listOf(
         accentShadow = Color(0xFFC96A52),
         keyShadow = Color(0xFFDDB2A4),
         line = Color(0xFFEAD3C9),
-        muted = Color(0xFF8A6E63),
-        functionKey = Color(0xFFEBC5B8)
+        muted = Color(0xFF8A6E63)
     )
 )
 
@@ -108,7 +103,6 @@ data class KeyboardPalette(
     val keyShadow: Color,
     val specialKey: Color,
     val specialShadow: Color,
-    val functionBg: Color,
     val canvasBg: Color
 )
 
@@ -129,7 +123,6 @@ fun getPalette(choice: ThemeChoice): KeyboardPalette {
         keyShadow = t.keyShadow,
         specialKey = t.key,
         specialShadow = t.keyShadow,
-        functionBg = t.functionKey,
         // Settings/app background is ALWAYS paper (light only).
         canvasBg = Tokens.Paper
     )

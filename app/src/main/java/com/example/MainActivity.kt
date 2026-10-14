@@ -166,7 +166,7 @@ class MainActivity : ComponentActivity() {
      * the app down with no visible cause. Show whatever was captured instead.
      */
     private fun showLastCrash() {
-        val text = CrashReporter.lastCrash(this) ?: return
+        val text = CrashReporter.consumeLastCrash(this) ?: return
         if (text.contains("MainActivity.onCreate")) return  // never loop on our own crash
         runCatching {
             AlertDialog.Builder(this)
@@ -176,7 +176,7 @@ class MainActivity : ComponentActivity() {
                     val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("crash", text))
                 }
-                .setNegativeButton("Dismiss") { _, _ -> CrashReporter.clear(this) }
+                .setNegativeButton("Dismiss", null)
                 .show()
         }
     }

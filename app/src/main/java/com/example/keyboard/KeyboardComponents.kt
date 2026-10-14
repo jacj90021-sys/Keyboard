@@ -51,7 +51,6 @@ enum class KeyStyle {
     SPECIAL,
     LIME,
     FN,
-    NAVIGATION,
     NUMPAD_SWITCH
 }
 
@@ -79,26 +78,22 @@ fun SoftKey(
     // there is always a clear colour flash on key press.
     val isAccent = isArmed || style == KeyStyle.LIME || isPressed
 
-    val navTint = androidx.compose.ui.graphics.lerp(palette.keyBg, palette.lime, 0.28f)
-
+    // 1.7 behaviour, unchanged: normal keys use the theme key colour, special keys
+    // keep the same fill (only their text tone differs), and every pressed/active key
+    // uses the theme accent.
     val bgColor = when {
         isAccent -> palette.lime
-        style == KeyStyle.NAVIGATION -> navTint
-        style == KeyStyle.SPECIAL -> palette.functionBg
-        style == KeyStyle.NUMPAD_SWITCH -> palette.paperSubtle
         else -> palette.keyBg
     }
 
     val shadowColor = when {
-        isAccent -> palette.limeShadow
-        style == KeyStyle.NAVIGATION -> palette.keyShadow
-        style == KeyStyle.SPECIAL -> palette.specialShadow
+        isArmed || style == KeyStyle.LIME -> palette.limeShadow
         else -> palette.keyShadow
     }
 
     val textColor = when {
         isAccent -> palette.onAccent
-        style == KeyStyle.SPECIAL || style == KeyStyle.NAVIGATION -> palette.inkSecondary
+        style == KeyStyle.SPECIAL -> palette.inkSecondary
         else -> palette.ink
     }
 

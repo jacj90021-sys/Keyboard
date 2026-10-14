@@ -50,6 +50,17 @@ object CrashReporter {
         return runCatching { file.readText() }.getOrNull()
     }
 
+    /**
+     * Read the crash report and delete it in one go. A crash must be shown once,
+     * never again - otherwise an old report reappears on every launch and looks
+     * like a bug "for no reason".
+     */
+    fun consumeLastCrash(context: Context): String? {
+        val text = lastCrash(context) ?: return null
+        clear(context)
+        return text
+    }
+
     fun clear(context: Context) {
         runCatching { File(context.filesDir, FILE_NAME).delete() }
     }

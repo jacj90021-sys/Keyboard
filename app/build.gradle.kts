@@ -13,8 +13,8 @@ android {
     applicationId = "com.example"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "1.8-fn-layer"
+    versionCode = 4
+    versionName = "1.8.1-fn-layer"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
