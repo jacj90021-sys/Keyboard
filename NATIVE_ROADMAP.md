@@ -16,7 +16,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
    reject unsorted/duplicate keys, reject truncated value bounds.
 4. `[x]` **No-panic fuzz test** — feed pseudo-random byte buffers to the loader
    and assert it always returns `Ok`/`Err` without panicking or aborting.
-5. `[ ]` **Extract testable suggestion planner** — move the Kotlin candidate
+5. `[x]` **Extract testable suggestion planner** — move the Kotlin candidate
    merge rules into a pure function with unit tests.
 6. `[ ]` **Dictionary build tool** — `tools/build_dictionary.py` + curated
    word list, regenerate the shipped `keyboard_dictionary.bin`.

@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.keyboard.native.NativeEngineBridge
+import com.example.keyboard.native.SuggestionPlanner
 
 @Composable
 fun PaperLimeKeyboardView(
@@ -46,22 +47,14 @@ fun PaperLimeKeyboardView(
     val dictionaryCandidates = remember(currentPrefix, lastCommittedWord) {
         if (!NativeEngineBridge.isLoaded()) {
             emptyList()
-        } else if (currentPrefix.length >= 2) {
-            val prefixes = NativeEngineBridge.dictionaryTopPrefixesContextual(
-                currentPrefix,
-                lastCommittedWord,
-                4
-            )
-            val corrections = if (prefixes.isEmpty()) {
-                NativeEngineBridge.dictionaryCorrections(currentPrefix, 4)
-            } else {
-                emptyList()
-            }
-            (prefixes + corrections).distinct().take(4)
-        } else if (lastCommittedWord.isNotBlank()) {
-            NativeEngineBridge.dictionaryTopNextWords(lastCommittedWord, 4).distinct().take(4)
         } else {
-            emptyList()
+            SuggestionPlanner.candidates(
+                prefix = currentPrefix,
+                previousWord = lastCommittedWord,
+                topPrefixesContextual = NativeEngineBridge::dictionaryTopPrefixesContextual,
+                corrections = NativeEngineBridge::dictionaryCorrections,
+                nextWords = NativeEngineBridge::dictionaryTopNextWords
+            )
         }
     }
     val trackedCommit: (String) -> Unit = { text ->
