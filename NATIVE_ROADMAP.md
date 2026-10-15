@@ -18,7 +18,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
    and assert it always returns `Ok`/`Err` without panicking or aborting.
 5. `[x]` **Extract testable suggestion planner** — move the Kotlin candidate
    merge rules into a pure function with unit tests.
-6. `[ ]` **Dictionary build tool** — `tools/build_dictionary.py` + curated
+6. `[x]` **Dictionary build tool** — `tools/build_dictionary.py` + curated
    word list, regenerate the shipped `keyboard_dictionary.bin`.
 7. `[ ]` **Instrumentation smoke test** — native load/init/query on device.
 8. `[ ]` **Docs** — document the `PLKD` format and the JNI surface.

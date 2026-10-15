@@ -641,4 +641,20 @@ mod tests {
             let _ = std::fs::remove_file(path);
         }
     }
+
+    #[test]
+    fn shipped_dictionary_asset_loads_if_present() {
+        // Guards the repo asset against format drift: if tools/build_dictionary.py
+        // writes something the engine cannot read, this fails locally.
+        let asset = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../app/src/main/assets/keyboard_dictionary.bin");
+        if !asset.exists() {
+            return;
+        }
+        let dictionary = MappedDictionary::load(&asset).expect("shipped asset must parse");
+        assert!(dictionary.entry_count() > 100);
+        assert!(dictionary.exact_match(b"the").is_some());
+        let top = dictionary.top_prefixes(b"th", 4);
+        assert!(!top.is_empty());
+    }
 }
