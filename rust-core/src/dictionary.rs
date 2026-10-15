@@ -210,6 +210,24 @@ impl MappedDictionary {
         }
         low
     }
+
+    pub fn top_prefixes(&self, prefix: &[u8], max: usize) -> Vec<usize> {
+        let start = self.prefix_start(prefix);
+        let end = self.prefix_end(prefix);
+        let mut candidates: Vec<(usize, u64)> = (start..end)
+            .map(|index| {
+                let score = self
+                    .value_at(index)
+                    .and_then(|value| std::str::from_utf8(value).ok())
+                    .and_then(|text| text.trim().parse::<u64>().ok())
+                    .unwrap_or(0);
+                (index, score)
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        candidates.into_iter().take(max).map(|(index, _)| index).collect()
+    }
 }
 
 impl Drop for MappedDictionary {

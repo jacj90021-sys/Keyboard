@@ -44,8 +44,7 @@ fun PaperLimeKeyboardView(
     var currentPrefix by remember { mutableStateOf("") }
     val dictionaryCandidates = remember(currentPrefix) {
         if (currentPrefix.length >= 2 && NativeEngineBridge.isLoaded()) {
-            val count = NativeEngineBridge.dictionaryPrefixCount(currentPrefix).coerceIn(0, 4)
-            (0 until count).mapNotNull { NativeEngineBridge.dictionaryPrefixKey(currentPrefix, it) }
+            NativeEngineBridge.dictionaryTopPrefixes(currentPrefix, 4)
         } else {
             emptyList()
         }

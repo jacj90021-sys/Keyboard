@@ -40,6 +40,9 @@ object NativeEngineBridge {
     @JvmStatic
     private external fun rustDictionaryPrefixKey(prefix: String, index: Int): String?
 
+    @JvmStatic
+    private external fun rustDictionaryTopPrefixes(prefix: String, maxCount: Int): String?
+
     private var loaded = false
 
     fun isLoaded(): Boolean = loaded
@@ -72,6 +75,12 @@ object NativeEngineBridge {
 
     fun dictionaryPrefixKey(prefix: String, index: Int): String? =
         if (loaded) safeCallNullable { rustDictionaryPrefixKey(prefix, index) } else null
+
+    fun dictionaryTopPrefixes(prefix: String, maxCount: Int): List<String> {
+        if (!loaded) return emptyList()
+        val raw = safeCallNullable { rustDictionaryTopPrefixes(prefix, maxCount) }
+        return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
+    }
 
     fun loadSampleDictionary(context: Context): Int {
         if (!loaded) tryLoad()

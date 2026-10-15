@@ -241,3 +241,40 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
     }
     std::ptr::null_mut()
 }
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryTopPrefixes(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    prefix: jni::objects::JString,
+    max_count: jni::sys::jint,
+) -> jni::sys::jstring {
+    let requested: String = match env.get_string(&prefix) {
+        Ok(value) => value.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let max = if max_count <= 0 { 4usize } else { max_count as usize };
+    let mut output = String::new();
+
+    if let Ok(guard) = DICTIONARY.lock() {
+        if let Some(dictionary) = guard.as_ref() {
+            let mut first = true;
+            for index in dictionary.top_prefixes(requested.as_bytes(), max) {
+                if let Some(key) = dictionary.key_at(index) {
+                    let text = String::from_utf8_lossy(key);
+                    if !first {
+                        output.push('\u{001f}');
+                    }
+                    first = false;
+                    output.push_str(&text);
+                }
+            }
+        }
+    }
+
+    match env.new_string(output) {
+        Ok(result) => result.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
