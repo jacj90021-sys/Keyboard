@@ -1033,8 +1033,15 @@ mod tests {
         let dictionary = MappedDictionary::load(&asset).expect("shipped asset must parse");
         assert!(dictionary.entry_count() > 100);
         assert!(dictionary.exact_match(b"the").is_some());
+        // Contractions are part of the word list now.
+        assert!(dictionary.exact_match(b"don't").is_some());
         let top = dictionary.top_prefixes(b"th", 4);
         assert!(!top.is_empty());
+        let don = dictionary.suggest(b"don", "", 3);
+        assert_eq!(
+            don.first().and_then(|&index| dictionary.key_at(index)),
+            Some(b"don't".as_slice())
+        );
     }
 
     #[test]

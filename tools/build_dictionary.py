@@ -53,8 +53,10 @@ def parse_wordlist(path: Path) -> list[tuple[bytes, bytes]]:
             raise SystemExit(f"{path}:{line_number}: expected '<word> <frequency>'")
         word, frequency_text = parts
         word = word.lower()
-        if not word.isalpha():
-            raise SystemExit(f"{path}:{line_number}: word must be alphabetic: {word!r}")
+        if not word or not all(ch.isalpha() or ch == "'" for ch in word):
+            raise SystemExit(f"{path}:{line_number}: word must be letters/apostrophes: {word!r}")
+        if word.startswith("'") or word.endswith("'"):
+            raise SystemExit(f"{path}:{line_number}: word must not start/end with apostrophe: {word!r}")
         try:
             frequency = int(frequency_text)
         except ValueError:

@@ -41,6 +41,7 @@ jobs:
 
       - name: Verify dictionary asset matches word list
         run: |
+          python3 -m unittest discover -s tools -p "test_*.py"
           python3 tools/build_dictionary.py
           git diff --exit-code -- app/src/main/assets/keyboard_dictionary.bin
 

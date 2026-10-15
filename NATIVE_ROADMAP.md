@@ -41,7 +41,10 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 14. `[x]` **Session learning** — promote accepted suggestions and correctly
     typed words so ranking adapts during a session.
 15. `[x]` **Persist learned words** across restarts (bounded, private storage).
-16. `[ ]` **Locale/language switch** hook for multiple dictionaries.
+16. `[~]` **Locale/language switch** hook for multiple dictionaries. Deferred:
+    the existing frontend "language" action is a no-op and there is no second
+    dictionary asset, so this would be inventing a feature. Revisit when a real
+    language UI exists.
 17. `[x]` **Rust integration test** exercising the public API from `tests/`.
 
 ## Phase 4 — hardening & tooling
@@ -50,6 +53,8 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 19. `[x]` **Pinned toolchain** (`rust-toolchain.toml`).
 20. `[x]` **Multi-ABI builds** (arm64-v8a + x86_64) for emulator coverage.
 21. `[x]` **Engine version query** exposed to Kotlin.
+22. `[x]` **Contractions** in the word list (builder now allows apostrophes).
+23. `[x]` **Builder unit tests** (`tools/test_build_dictionary.py`), run in CI.
 
 ## Constraints
 
