@@ -479,4 +479,25 @@ mod tests {
         assert_eq!(levenshtein_distance(b"a", b""), 1);
         assert_eq!(levenshtein_distance(b"ab", b"ba"), 2);
     }
+
+    #[test]
+    fn contextual_boost_changes_candidate_order() {
+        let path = temp_path("context");
+        write_dictionary(
+            &path,
+            &[
+                (b"moon", b"1"),
+                (b"morning", b"1"),
+            ],
+        );
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let boosted = dictionary.top_prefixes_contextual(b"mo", "good", 2);
+        let keys: Vec<&[u8]> = boosted
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert_eq!(keys.first().copied(), Some(b"morning".as_slice()));
+        let _ = std::fs::remove_file(path);
+    }
 }
