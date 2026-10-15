@@ -252,7 +252,7 @@ fun SuggestionsBar(
                     color = palette.ink,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    fontFamily = if (isFnMode) FontFamily.Monospace else FontFamily.Default,
+                    fontFamily = FontFamily.Default,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
