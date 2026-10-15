@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.sp
 import com.example.keyboard.native.NativeEngineBridge
 import com.example.keyboard.native.SuggestionCase
 import com.example.keyboard.native.SuggestionPlanner
+import java.io.File
 
 @Composable
 fun PaperLimeKeyboardView(
@@ -43,6 +44,17 @@ fun PaperLimeKeyboardView(
         )
     }
 
+    val context = LocalContext.current
+    val learnedWordsFile = remember(context) { File(context.filesDir, "learned_words.tsv") }
+    // Promote a word the user accepted or typed correctly, and persist the table
+    // so the engine keeps adapting across sessions.
+    val learnWord: (String) -> Unit = { word ->
+        if (word.isNotBlank()) {
+            NativeEngineBridge.dictionaryPromote(word)
+            NativeEngineBridge.dictionarySavePromotions(learnedWordsFile.absolutePath)
+        }
+    }
+
     var currentPrefix by remember { mutableStateOf("") }
     var rawPrefix by remember { mutableStateOf("") }
     var lastCommittedWord by remember { mutableStateOf("") }
@@ -60,7 +72,7 @@ fun PaperLimeKeyboardView(
                     lastCommittedWord = currentPrefix
                     // Learn correctly typed words (only if they are real entries).
                     if (NativeEngineBridge.dictionaryExactValue(currentPrefix) != null) {
-                        NativeEngineBridge.dictionaryPromote(currentPrefix)
+                        learnWord(currentPrefix)
                     }
                 }
                 ""
@@ -86,10 +98,11 @@ fun PaperLimeKeyboardView(
         onEnter()
     }
 
-    val context = LocalContext.current
     LaunchedEffect(context) {
         NativeEngineBridge.tryLoad()
         NativeEngineBridge.loadSampleDictionary(context)
+        // Restore words this user has taught the engine in earlier sessions.
+        NativeEngineBridge.dictionaryLoadPromotions(learnedWordsFile.absolutePath)
     }
 
     LaunchedEffect(prefs.startOpen) { isToolbarExpanded = prefs.startOpen }
@@ -175,7 +188,7 @@ fun PaperLimeKeyboardView(
                         // user's capitalisation and reset the typing state so the
                         // next word starts clean (and next-word hints fire).
                         val cased = SuggestionCase.apply(rawPrefix, word)
-                        NativeEngineBridge.dictionaryPromote(word.lowercase())
+                        learnWord(word.lowercase())
                         lastCommittedWord = word.lowercase()
                         currentPrefix = ""
                         rawPrefix = ""

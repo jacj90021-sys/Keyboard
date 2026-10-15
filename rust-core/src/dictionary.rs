@@ -212,6 +212,14 @@ const MIN_ENTRY_BYTES: usize = 5;
 /// stream of taps cannot overflow or completely dominate frequency scores.
 const MAX_PROMOTION: u64 = 1_000_000;
 
+/// Header written at the top of a persisted learned-words file.
+const PROMOTIONS_MAGIC: &str = "PLKP1";
+
+/// Bound on a learned word and on the total table size, so a corrupt or hostile
+/// file cannot exhaust memory.
+const MAX_LEARNED_WORD_BYTES: usize = 128;
+const MAX_LEARNED_WORDS: usize = 20_000;
+
 /// Runtime word preferences learned from the user: accepted suggestions and
 /// correctly typed words. Kept separate from the immutable mapped dictionary so
 /// it can change without re-mapping, and so ranking stays deterministic and
@@ -251,6 +259,75 @@ impl PromotionTable {
 
     pub fn is_empty(&self) -> bool {
         self.boosts.is_empty()
+    }
+
+    /// Serialize to a small, deterministic, human-readable text form:
+    /// a magic header line followed by `<boost>\t<word>` lines sorted by word.
+    pub fn serialize(&self) -> String {
+        let mut rows: Vec<(&Vec<u8>, &u64)> = self.boosts.iter().collect();
+        rows.sort_by(|a, b| a.0.cmp(b.0));
+
+        let mut output = String::from(PROMOTIONS_MAGIC);
+        output.push('\n');
+        for (word, boost) in rows {
+            let Ok(text) = std::str::from_utf8(word) else {
+                continue;
+            };
+            if text.is_empty() || text.contains(['\t', '\n', '\r']) {
+                continue;
+            }
+            output.push_str(&boost.to_string());
+            output.push('\t');
+            output.push_str(text);
+            output.push('\n');
+        }
+        output
+    }
+
+    /// Replace the table with the contents of [text]. Malformed lines are
+    /// ignored, not fatal, so a partially damaged file still loads what it can.
+    /// Returns the number of words read.
+    pub fn load_from_str(&mut self, text: &str) -> usize {
+        self.boosts.clear();
+        let mut loaded = 0usize;
+        for (line_number, line) in text.lines().enumerate() {
+            if line_number == 0 && line.trim_end_matches('\r') == PROMOTIONS_MAGIC {
+                continue;
+            }
+            let Some((boost_text, word)) = line.split_once('\t') else {
+                continue;
+            };
+            let word = word.trim_end_matches('\r');
+            if word.is_empty() || word.len() > MAX_LEARNED_WORD_BYTES {
+                continue;
+            }
+            // Parse wide and clamp, so an over-large value still loads instead of
+            // being discarded as unparsable.
+            let Ok(boost) = boost_text.parse::<u128>() else {
+                continue;
+            };
+            self.boosts.insert(
+                word.as_bytes().to_vec(),
+                boost.min(MAX_PROMOTION as u128) as u64,
+            );
+            loaded += 1;
+            if loaded >= MAX_LEARNED_WORDS {
+                break;
+            }
+        }
+        loaded
+    }
+
+    /// Atomically persist the table: write a sibling temp file, then rename.
+    pub fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
+        let temporary = path.with_extension("tmp");
+        std::fs::write(&temporary, self.serialize().as_bytes())?;
+        std::fs::rename(&temporary, path)
+    }
+
+    pub fn load_from_file(&mut self, path: &Path) -> std::io::Result<usize> {
+        let text = std::fs::read_to_string(path)?;
+        Ok(self.load_from_str(&text))
     }
 }
 
@@ -1156,6 +1233,59 @@ mod tests {
         promotions.promote(b"moon", 50);
         let next = dictionary.top_next_words_ranked("unrelated", 2, &promotions);
         assert_eq!(dictionary.key_at(next[0]).unwrap(), b"moon");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn promotion_serialization_round_trips() {
+        let mut promotions = PromotionTable::new();
+        promotions.promote(b"hello", 100);
+        promotions.promote(b"world", 250);
+        promotions.promote(b"good", 42);
+
+        let text = promotions.serialize();
+        assert!(text.starts_with(PROMOTIONS_MAGIC));
+        // Deterministic ordering by word.
+        let order: Vec<&str> = text.lines().skip(1).collect();
+        assert_eq!(order, vec!["42\tgood", "100\thello", "250\tworld"]);
+
+        let mut restored = PromotionTable::new();
+        assert_eq!(restored.load_from_str(&text), 3);
+        assert_eq!(restored.boost(b"good"), 42);
+        assert_eq!(restored.boost(b"hello"), 100);
+        assert_eq!(restored.boost(b"world"), 250);
+    }
+
+    #[test]
+    fn promotion_loading_ignores_malformed_lines() {
+        let mut promotions = PromotionTable::new();
+        let text = "PLKP1\n\
+            not-a-number\thello\n\
+            garbage-without-tab\n\
+            50\t\n\
+            10\tgood\n\
+            99999999999999999999\thuge\n\
+            7\tok then-ignored\n";
+        let loaded = promotions.load_from_str(text);
+        // "good", "huge" (clamped), and the space-containing word all load;
+        // the malformed and empty-word lines do not.
+        assert_eq!(loaded, 3);
+        assert_eq!(promotions.boost(b"good"), 10);
+        assert_eq!(promotions.boost(b"huge"), MAX_PROMOTION);
+        assert_eq!(promotions.boost(b"ok then-ignored"), 7);
+        assert_eq!(promotions.boost(b"hello"), 0);
+    }
+
+    #[test]
+    fn promotion_table_saves_and_loads_a_file() {
+        let path = temp_path("promotions");
+        let mut promotions = PromotionTable::new();
+        promotions.promote(b"keyboard", 100);
+        promotions.save_to_file(&path).unwrap();
+
+        let mut restored = PromotionTable::new();
+        assert_eq!(restored.load_from_file(&path).unwrap(), 1);
+        assert_eq!(restored.boost(b"keyboard"), 100);
         let _ = std::fs::remove_file(path);
     }
 }

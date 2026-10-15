@@ -40,7 +40,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 
 14. `[x]` **Session learning** — promote accepted suggestions and correctly
     typed words so ranking adapts during a session.
-15. `[ ]` **Persist learned words** across restarts (bounded, private storage).
+15. `[x]` **Persist learned words** across restarts (bounded, private storage).
 16. `[ ]` **Locale/language switch** hook for multiple dictionaries.
 17. `[x]` **Rust integration test** exercising the public API from `tests/`.
 

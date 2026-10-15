@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * End-to-end smoke test for the Rust core on a real device/emulator.
@@ -50,6 +51,16 @@ class NativeEngineInstrumentedTest {
         assertEquals(0, NativeEngineBridge.dictionaryClearPromotions())
         assertEquals(0, NativeEngineBridge.dictionaryPromotionCount())
         assertNotNull(NativeEngineBridge.engineVersion())
+
+        // Learning persists: save, clear, reload, and confirm the word survives.
+        val learned = File(context.filesDir, "instrumented_learned_words.tsv")
+        assertEquals(0, NativeEngineBridge.dictionaryPromote("keyboard"))
+        assertEquals(0, NativeEngineBridge.dictionarySavePromotions(learned.absolutePath))
+        assertEquals(0, NativeEngineBridge.dictionaryClearPromotions())
+        assertEquals(0, NativeEngineBridge.dictionaryPromotionCount())
+        assertEquals(0, NativeEngineBridge.dictionaryLoadPromotions(learned.absolutePath))
+        assertEquals(1, NativeEngineBridge.dictionaryPromotionCount())
+        learned.delete()
 
         assertEquals(0, NativeEngineBridge.shutdownEngine())
     }

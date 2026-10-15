@@ -517,7 +517,6 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         .unwrap_or(0)
 }
 
-
 #[no_mangle]
 pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustEngineVersion(
     env: JNIEnv,
@@ -526,6 +525,44 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustE
     match env.new_string(env!("CARGO_PKG_VERSION")) {
         Ok(result) => result.into_raw(),
         Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryLoadPromotions(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) -> jint {
+    let requested: String = match env.get_string(&path) {
+        Ok(value) => value.into(),
+        Err(_) => return -1,
+    };
+    match PROMOTIONS.lock() {
+        Ok(mut guard) => match guard.load_from_file(std::path::Path::new(&requested)) {
+            Ok(_) => 0,
+            Err(_) => -2,
+        },
+        Err(_) => -3,
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionarySavePromotions(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) -> jint {
+    let requested: String = match env.get_string(&path) {
+        Ok(value) => value.into(),
+        Err(_) => return -1,
+    };
+    match PROMOTIONS.lock() {
+        Ok(guard) => match guard.save_to_file(std::path::Path::new(&requested)) {
+            Ok(()) => 0,
+            Err(_) => -2,
+        },
+        Err(_) => -3,
     }
 }
 

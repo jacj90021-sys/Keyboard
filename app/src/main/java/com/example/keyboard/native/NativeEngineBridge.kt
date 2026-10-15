@@ -73,6 +73,12 @@ object NativeEngineBridge {
     private external fun rustDictionaryPromotionCount(): Int
 
     @JvmStatic
+    private external fun rustDictionaryLoadPromotions(path: String): Int
+
+    @JvmStatic
+    private external fun rustDictionarySavePromotions(path: String): Int
+
+    @JvmStatic
     private external fun rustEngineVersion(): String?
 
     @JvmStatic
@@ -161,6 +167,14 @@ object NativeEngineBridge {
 
     fun dictionaryPromotionCount(): Int =
         if (loaded) safeCall { rustDictionaryPromotionCount() } else 0
+
+    /** Load previously learned words. Returns 0 on success, negative otherwise. */
+    fun dictionaryLoadPromotions(path: String): Int =
+        if (loaded) safeCall { rustDictionaryLoadPromotions(path) } else -1
+
+    /** Persist learned words. Returns 0 on success, negative otherwise. */
+    fun dictionarySavePromotions(path: String): Int =
+        if (loaded) safeCall { rustDictionarySavePromotions(path) } else -1
 
     /** Native engine version string, or null when the library is unavailable. */
     fun engineVersion(): String? =
