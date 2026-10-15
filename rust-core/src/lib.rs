@@ -3,9 +3,11 @@
 //! Walking-skeleton implementation: enough structure to prove the C-ABI boundary
 //! and cross-compilation before importing any higher-level algorithms.
 
+mod automaton;
 mod dictionary;
 mod gesture;
 mod inference;
+pub use automaton::Automaton;
 pub use dictionary::{DictionaryError, MappedDictionary, PromotionTable};
 pub use gesture::{rank_stroke, trace_cost, Cell, Trace, TraceVerdict, TraceWeights};
 pub use inference::{BackendKind, MlEngine, RankContext, RuntimeReport};

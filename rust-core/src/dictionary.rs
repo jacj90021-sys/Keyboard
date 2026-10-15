@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::path::Path;
 
+use crate::automaton::Automaton;
+
 const MAGIC: &[u8; 4] = b"PLKD";
 const VERSION: u32 = 1;
 
@@ -24,6 +26,7 @@ pub struct MappedDictionary {
     mapped_ptr: *mut u8,
     mapped_size: usize,
     entries: Vec<EntryIndex>,
+    automaton: Automaton,
 }
 
 static CONTEXT_TRANSITIONS: &[(&str, &str, u32)] = &[
@@ -463,10 +466,19 @@ impl MappedDictionary {
             }
         }
 
+        let automaton = {
+            let keys: Vec<&[u8]> = entries
+                .iter()
+                .map(|entry| &data[entry.key_offset..entry.key_offset + entry.key_len])
+                .collect();
+            Automaton::build(&keys)
+        };
+
         Ok(Self {
             mapped_ptr: mapped_ptr as *mut u8,
             mapped_size,
             entries,
+            automaton,
         })
     }
 
@@ -693,20 +705,17 @@ impl MappedDictionary {
         max_distance: usize,
         promotions: &PromotionTable,
     ) -> Vec<usize> {
-        let mut matches: Vec<(usize, usize, u64)> = (0..self.entry_count())
-            .filter_map(|index| {
-                let key = self.key_at(index)?;
-                if key.len().abs_diff(typo.len()) > max_distance {
-                    return None;
-                }
-                let distance = levenshtein_distance(key, typo);
-                if distance == 0 || distance > max_distance {
-                    return None;
-                }
+        let mut matches: Vec<(usize, usize, u64)> = self
+            .automaton
+            .fuzzy(typo, max_distance)
+            .into_iter()
+            .filter_map(|(entry_index, distance)| {
+                let idx = entry_index as usize;
+                let key = self.key_at(idx)?;
                 Some((
-                    index,
+                    idx,
                     distance,
-                    self.frequency_at(index) + promotions.boost(key),
+                    self.frequency_at(idx) + promotions.boost(key),
                 ))
             })
             .collect();
@@ -726,6 +735,7 @@ impl MappedDictionary {
     }
 }
 
+#[allow(dead_code)]
 fn levenshtein_distance(left: &[u8], right: &[u8]) -> usize {
     if left.is_empty() {
         return right.len();
