@@ -366,6 +366,44 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
 }
 
 #[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryAutocorrect(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    word: jni::objects::JString,
+) -> jni::sys::jstring {
+    let requested: String = match env.get_string(&word) {
+        Ok(value) => value.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    // `None` means "leave the word as typed"; a null return tells Kotlin the same.
+    let corrected = {
+        let promotions = match PROMOTIONS.lock() {
+            Ok(guard) => guard,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let dictionary = match DICTIONARY.lock() {
+            Ok(guard) => guard,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        dictionary.as_ref().and_then(|dictionary| {
+            dictionary
+                .autocorrect_ranked(requested.as_bytes(), &promotions)
+                .and_then(|index| dictionary.key_at(index))
+                .map(|key| String::from_utf8_lossy(key).into_owned())
+        })
+    };
+
+    match corrected {
+        Some(word) => match env.new_string(word) {
+            Ok(result) => result.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryTopPrefixesContextual(
     mut env: jni::JNIEnv,
     _class: jni::objects::JClass,

@@ -85,6 +85,9 @@ object NativeEngineBridge {
     private external fun rustDictionaryCorrections(typo: String, maxCount: Int): String?
 
     @JvmStatic
+    private external fun rustDictionaryAutocorrect(word: String): String?
+
+    @JvmStatic
     private external fun rustGestureDecode(
         strokeXy: FloatArray,
         layoutXy: FloatArray,
@@ -166,6 +169,14 @@ object NativeEngineBridge {
         val raw = safeCallNullable { rustDictionaryCorrections(typo, maxCount) }
         return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
     }
+
+    /**
+     * Ask the engine whether [word] should be auto-replaced on commit. Returns
+     * the correction, or `null` to leave the typed word untouched. The decision
+     * (frequency, distance, learned boosts) lives entirely in the native engine.
+     */
+    fun dictionaryAutocorrect(word: String): String? =
+        if (loaded && word.isNotBlank()) safeCallNullable { rustDictionaryAutocorrect(word) } else null
 
     /**
      * Fused suggestion query. Ranking (prefix vs. correction vs. next-word) is

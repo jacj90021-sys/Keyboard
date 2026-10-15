@@ -42,6 +42,7 @@ class NativeEngineBridgeFallbackTest {
         assertTrue(NativeEngineBridge.dictionaryTopPrefixesContextual("th", "", 4).isEmpty())
         assertTrue(NativeEngineBridge.dictionaryTopNextWords("good", 4).isEmpty())
         assertTrue(NativeEngineBridge.dictionaryCorrections("teh", 4).isEmpty())
+        assertNull(NativeEngineBridge.dictionaryAutocorrect("teh"))
         assertTrue(NativeEngineBridge.dictionarySuggest("th", "", 4).isEmpty())
         assertTrue(NativeEngineBridge.gestureDecode(floatArrayOf(), floatArrayOf(), 4).isEmpty())
         assertEquals(-1, NativeEngineBridge.mlLoadModel("/does/not/exist.tflite"))

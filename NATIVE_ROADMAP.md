@@ -90,6 +90,16 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 35. `[ ]` **Feature parity test with the model** — golden outputs comparing the
     LiteRT path against the heuristic on a fixed sample set.
 
+## Phase 7 — autocorrect
+
+36. `[x]` **Autocorrect policy** — `MappedDictionary::autocorrect[_ranked]` swaps a
+    clearly mistyped word on commit (transposition-aware radius, frequency floor,
+    margin over real words, learned-boost respected).
+37. `[x]` **Autocorrect JNI + Kotlin** — `rustDictionaryAutocorrect` /
+    `dictionaryAutocorrect`; wired into the space-commit path in the keyboard view.
+38. `[x]` **Autocorrect tests** — 5 unit tests plus a shipped-dictionary
+    integration test and a device assertion.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

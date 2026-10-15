@@ -62,6 +62,13 @@ class NativeEngineInstrumentedTest {
         assertEquals(1, NativeEngineBridge.dictionaryPromotionCount())
         learned.delete()
 
+        // Autocorrect: a clear transposition is fixed, a real word is left alone.
+        assertEquals("the", NativeEngineBridge.dictionaryAutocorrect("teh"))
+        assertTrue(
+            "a correctly spelled word must not be autocorrected",
+            NativeEngineBridge.dictionaryAutocorrect("the") == null
+        )
+
         assertEquals(0, NativeEngineBridge.shutdownEngine())
     }
 }

@@ -77,10 +77,22 @@ fun PaperLimeKeyboardView(
         currentPrefix = when {
             text == " " -> {
                 if (currentPrefix.isNotBlank()) {
-                    lastCommittedWord = currentPrefix
-                    // Learn correctly typed words (only if they are real entries).
-                    if (NativeEngineBridge.dictionaryExactValue(currentPrefix) != null) {
-                        learnWord(currentPrefix)
+                    // Autocorrect on word commit: the engine decides whether the
+                    // typed word should be swapped for a likely correction.
+                    val correction = NativeEngineBridge.dictionaryAutocorrect(currentPrefix)
+                    if (correction != null && correction != currentPrefix) {
+                        val typedLength =
+                            if (rawPrefix.isNotEmpty()) rawPrefix.length else currentPrefix.length
+                        repeat(typedLength) { onDelete() }
+                        onCommitText(SuggestionCase.apply(rawPrefix, correction))
+                        lastCommittedWord = correction
+                        learnWord(correction)
+                    } else {
+                        lastCommittedWord = currentPrefix
+                        // Learn correctly typed words (only if they are real entries).
+                        if (NativeEngineBridge.dictionaryExactValue(currentPrefix) != null) {
+                            learnWord(currentPrefix)
+                        }
                     }
                 }
                 ""

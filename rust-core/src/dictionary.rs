@@ -223,6 +223,29 @@ const PROMOTIONS_MAGIC: &str = "PLKP1";
 const MAX_LEARNED_WORD_BYTES: usize = 128;
 const MAX_LEARNED_WORDS: usize = 20_000;
 
+/// Autocorrect is deliberately conservative: it only ever fires on words the
+/// user clearly mistyped, and never fights a deliberate choice. These
+/// thresholds are stated against the shipped frequency scale (roughly 0..1000,
+/// plus learned boosts), not against raw corpus counts.
+///
+/// Short words are left alone: correcting a 1-2 letter token is far more
+/// likely to annoy than help.
+const AUTOCORRECT_MIN_LEN: usize = 3;
+
+/// A typed word scoring at least this high (frequency plus any learned boost)
+/// is treated as intentional and is never replaced.
+const AUTOCORRECT_CONFIDENT: u64 = 200;
+
+/// How much more frequent the replacement must be than a *real* word that was
+/// typed before the swap is judged worthwhile. Only applied when the typed word
+/// is itself in the dictionary; an unknown word just has to beat the floor.
+const AUTOCORRECT_MARGIN: u64 = 50;
+
+/// A replacement must clear this frequency so a real word is never corrected
+/// into an obscure dictionary entry. Scaled to the shipped word list, where
+/// everyday words sit anywhere from ~20 to ~1000.
+const AUTOCORRECT_FLOOR: u64 = 20;
+
 /// Runtime word preferences learned from the user: accepted suggestions and
 /// correctly typed words. Kept separate from the immutable mapped dictionary so
 /// it can change without re-mapping, and so ranking stays deterministic and
@@ -733,6 +756,78 @@ impl MappedDictionary {
             .map(|(index, _, _)| index)
             .collect()
     }
+
+    /// Decide the single best auto-replacement for a just-typed word, or `None`
+    /// to leave it untouched. Used on word commit (e.g. tapping space).
+    ///
+    /// The policy is intentionally cautious:
+    /// * only plain lowercase words of [`AUTOCORRECT_MIN_LEN`] or longer qualify;
+    /// * a word that is already frequent (or the user has taught us) is trusted;
+    /// * a replacement must be closer in edit distance, meaningfully more
+    ///   frequent, and clear the frequency floor.
+    pub fn autocorrect(&self, typed: &[u8]) -> Option<usize> {
+        self.autocorrect_ranked(typed, &PromotionTable::new())
+    }
+
+    pub fn autocorrect_ranked(&self, typed: &[u8], promotions: &PromotionTable) -> Option<usize> {
+        if typed.len() < AUTOCORRECT_MIN_LEN {
+            return None;
+        }
+        // Only bare lowercase letters are eligible; anything with digits,
+        // apostrophes, or capitals is left for the caller to handle.
+        if !typed.iter().all(u8::is_ascii_lowercase) {
+            return None;
+        }
+
+        let typed_match = self.exact_match(typed);
+        let typed_score = typed_match
+            .map(|index| self.frequency_at(index))
+            .unwrap_or(0)
+            + promotions.boost(typed);
+        if typed_score >= AUTOCORRECT_CONFIDENT {
+            return None;
+        }
+
+        // Against a real (but rare) word, demand a clear frequency gain; against
+        // an unknown token, only require the replacement to clear the floor.
+        let min_score = if typed_match.is_some() {
+            typed_score.saturating_add(AUTOCORRECT_MARGIN)
+        } else {
+            AUTOCORRECT_FLOOR
+        };
+
+        // A transposition ("teh" -> "the") is the most common slip and counts
+        // as *two* Levenshtein edits, so the radius has to be 2 to catch it.
+        // The floor/margin above stop this from over-reaching.
+        let radius = 2;
+
+        let mut candidates: Vec<(usize, usize, u64)> = self
+            .automaton
+            .fuzzy(typed, radius)
+            .into_iter()
+            .filter_map(|(entry_index, distance)| {
+                let index = entry_index as usize;
+                let key = self.key_at(index)?;
+                if key == typed {
+                    return None; // never "correct" to the word already typed
+                }
+                let score = self.frequency_at(index) + promotions.boost(key);
+                if score < min_score {
+                    return None;
+                }
+                Some((index, distance, score))
+            })
+            .collect();
+
+        // Closest edit first, then most frequent, then dictionary order so the
+        // result is deterministic.
+        candidates.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        candidates.first().map(|(index, _, _)| *index)
+    }
 }
 
 #[allow(dead_code)]
@@ -864,6 +959,83 @@ mod tests {
             keys,
             vec![b"card".as_slice(), b"cash".as_slice(), b"care".as_slice()]
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn autocorrects_a_clear_typo_to_the_common_word() {
+        let path = temp_path("autocorrect-typo");
+        write_dictionary(
+            &path,
+            &[(b"hte", b"3"), (b"she", b"120"), (b"the", b"1000")],
+        );
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let fixed = dictionary
+            .autocorrect(b"hte")
+            .map(|index| dictionary.key_at(index).unwrap());
+        assert_eq!(fixed, Some(b"the".as_slice()));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn leaves_a_confident_word_alone() {
+        let path = temp_path("autocorrect-confident");
+        write_dictionary(
+            &path,
+            &[(b"the", b"1000"), (b"tho", b"400"), (b"thy", b"500")],
+        );
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        // "the" is already dominant, so nothing should replace it.
+        assert_eq!(dictionary.autocorrect(b"the"), None);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn autocorrect_ignores_short_and_non_letter_tokens() {
+        let path = temp_path("autocorrect-guards");
+        write_dictionary(&path, &[(b"as", b"700"), (b"at", b"900"), (b"it", b"800")]);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        assert_eq!(dictionary.autocorrect(b"at"), None); // too short
+        assert_eq!(dictionary.autocorrect(b"t'e"), None); // non-letter
+        assert_eq!(dictionary.autocorrect(b"The"), None); // capitals
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn autocorrect_requires_a_meaningful_frequency_gain() {
+        let path = temp_path("autocorrect-margin");
+        // Both real words, below the confident bar and close in frequency: no
+        // gain large enough to justify a swap.
+        write_dictionary(&path, &[(b"form", b"150"), (b"from", b"180")]);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        // "form" is a real word and "from" does not beat it by the margin, so
+        // the user's word survives.
+        assert_eq!(dictionary.autocorrect(b"form"), None);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn autocorrect_respects_learned_boosts() {
+        let path = temp_path("autocorrect-learned");
+        write_dictionary(&path, &[(b"teh", b"5"), (b"the", b"1000")]);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        // Naively "teh" would be corrected to "the"...
+        assert_eq!(
+            dictionary
+                .autocorrect(b"teh")
+                .map(|i| dictionary.key_at(i).unwrap()),
+            Some(b"the".as_slice())
+        );
+
+        // ...but once the user has taught us "teh", it is trusted.
+        let mut promotions = PromotionTable::new();
+        promotions.promote(b"teh", 400);
+        assert_eq!(dictionary.autocorrect_ranked(b"teh", &promotions), None);
         let _ = std::fs::remove_file(path);
     }
 
