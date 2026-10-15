@@ -20,3 +20,6 @@ local.properties
 rust-core/target/
 # Generated Android native libs
 app/src/main/jniLibs/
+# Python caches
+__pycache__/
+*.pyc
