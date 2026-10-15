@@ -31,6 +31,10 @@ fun PaperLimeKeyboardView(
     // the IME service owns the InputConnection, so it answers these. The default
     // keeps previews and tests inert.
     onAction: (String) -> Boolean = { false },
+    // Real clipboard history, owned by the IME service (the overlay used to show
+    // three hard-coded demo clips). Previews get an empty, inert list.
+    clipboardClips: List<String> = emptyList(),
+    onClearClipboard: () -> Unit = {},
     modifier: Modifier = Modifier,
     // Previews (onboarding / appearance) keep the keyboard visual-only: the
     // toolbar "More" (three dots) must not replace the view with All Actions.
@@ -42,15 +46,6 @@ fun PaperLimeKeyboardView(
     var isToolbarExpanded by rememberSaveable { mutableStateOf(prefs.startOpen) }
     var fnLongOverlay by rememberSaveable { mutableStateOf(false) }
     var lastShiftTapTime by remember { mutableLongStateOf(0L) }
-    var clipboardList by remember {
-        mutableStateOf(
-            listOf(
-                "Paper + Lime is an ergonomic keyboard.",
-                "Quick brown fox jumps over the lazy dog.",
-                "Hello World!"
-            )
-        )
-    }
 
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -324,9 +319,9 @@ fun PaperLimeKeyboardView(
                 OverlayView.CLIPBOARD -> {
                     ClipboardListPanel(
                         palette = palette,
-                        clips = clipboardList,
+                        clips = clipboardClips,
                         onClose = { overlay = OverlayView.NONE },
-                        onClearAll = { clipboardList = emptyList() },
+                        onClearAll = onClearClipboard,
                         onClipClick = { clip ->
                             onCommitText(clip)
                         }

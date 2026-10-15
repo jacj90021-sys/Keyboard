@@ -214,11 +214,13 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 56. `[ ]` **Voice input.** The card and the settings row exist; there is no
     recogniser wired up. Needs `RECORD_AUDIO` (a permission request surface) plus
     a `SpeechRecognizer` lifecycle in the service.
-57. `[ ]` **Real clipboard history.** The clipboard overlay still shows three
-    hard-coded sample clips; the grid's Paste card does work (it performs the
-    platform paste), but there is no captured history yet. Requires a
-    `ClipboardManager.OnPrimaryClipChangedListener` in the service feeding a
-    bounded list to the view.
+57. `[x]` **Real clipboard history.** The overlay used to show three hard-coded
+    demo clips. `ClipboardHistory` now keeps a bounded (24), newest-first,
+    de-duplicated list — plain Kotlin with 9 unit tests — and the IME service
+    fills it from a `ClipboardManager.OnPrimaryClipChangedListener` that is only
+    registered while the keyboard is on screen (a background IME has no business
+    reading the user's clipboard). The grid's Paste card performs the platform
+    paste; the overlay renders the captured history and can clear it.
 
 ## Constraints
 

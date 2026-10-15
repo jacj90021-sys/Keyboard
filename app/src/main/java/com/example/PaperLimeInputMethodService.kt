@@ -1,6 +1,7 @@
 package com.example
 
 import android.annotation.SuppressLint
+import android.content.ClipboardManager
 import android.inputmethodservice.InputMethodService
 import android.util.Log
 import android.view.inputmethod.EditorInfo
@@ -24,6 +25,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.compose.runtime.collectAsState
+import com.example.keyboard.ClipboardHistory
 import com.example.keyboard.ContextAction
 import com.example.keyboard.CursorMove
 import com.example.keyboard.EditorActions
@@ -54,6 +56,25 @@ class PaperLimeInputMethodService : InputMethodService(),
     private lateinit var prefsRepository: KeyboardPrefsRepository
     private val _prefs = MutableStateFlow(KeyboardPrefs())
     val prefs: StateFlow<KeyboardPrefs> = _prefs.asStateFlow()
+
+    // Android only hands out the *current* primary clip, so the keyboard keeps
+    // its own bounded history, captured while the IME view is visible (see
+    // ClipboardHistory for the rules).
+    private val clipboardHistory = ClipboardHistory()
+    private val _clipboardItems = MutableStateFlow<List<String>>(emptyList())
+    val clipboardItems: StateFlow<List<String>> = _clipboardItems.asStateFlow()
+    private var clipboardListenerRegistered = false
+    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+        runCatching {
+            val manager = getSystemService(ClipboardManager::class.java) ?: return@runCatching
+            val clip = manager.primaryClip ?: return@runCatching
+            if (clip.itemCount == 0) return@runCatching
+            val text = clip.getItemAt(0).coerceToText(this)?.toString()
+            if (clipboardHistory.add(text)) {
+                _clipboardItems.value = clipboardHistory.entries()
+            }
+        }.onFailure { Log.e(TAG, "clipboard capture failed", it) }
+    }
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -110,11 +131,17 @@ class PaperLimeInputMethodService : InputMethodService(),
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 val p by this@PaperLimeInputMethodService.prefs.collectAsState()
+                val clips by this@PaperLimeInputMethodService.clipboardItems.collectAsState()
                 val palette = remember(p.theme) { getPalette(p.theme) }
 
                 PaperLimeKeyboardView(
                     palette = palette,
                     prefs = p,
+                    clipboardClips = clips,
+                    onClearClipboard = {
+                        clipboardHistory.clear()
+                        _clipboardItems.value = emptyList()
+                    },
                     onCommitText = { text ->
                         runCatching {
                             val ic = currentInputConnection
@@ -287,10 +314,26 @@ class PaperLimeInputMethodService : InputMethodService(),
         currentInputEditorInfo = info
         runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START) }
         runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME) }
+        // Only watch the clipboard while the keyboard is actually on screen: a
+        // background IME has no business reading what the user copies.
+        if (!clipboardListenerRegistered) {
+            runCatching {
+                getSystemService(ClipboardManager::class.java)
+                    ?.addPrimaryClipChangedListener(clipboardListener)
+                clipboardListenerRegistered = true
+            }.onFailure { Log.e(TAG, "clipboard listen failed", it) }
+        }
     }
 
     override fun onFinishInputView(finishing: Boolean) {
         super.onFinishInputView(finishing)
+        if (clipboardListenerRegistered) {
+            runCatching {
+                getSystemService(ClipboardManager::class.java)
+                    ?.removePrimaryClipChangedListener(clipboardListener)
+            }.onFailure { Log.e(TAG, "clipboard stop failed", it) }
+            clipboardListenerRegistered = false
+        }
         runCatching {
             if (lifecycleRegistry.currentState == Lifecycle.State.RESUMED) {
                 lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
