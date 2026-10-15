@@ -413,4 +413,11 @@ mod tests {
         assert!(MappedDictionary::load(&path).is_err());
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn levenshtein_distance_is_reflexive_and_bounded() {
+        assert_eq!(levenshtein_distance(b"keyboard", b"keyboard"), 0);
+        assert_eq!(levenshtein_distance(b"a", b""), 1);
+        assert_eq!(levenshtein_distance(b"ab", b"ba"), 2);
+    }
 }
