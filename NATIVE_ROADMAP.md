@@ -65,10 +65,15 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     returns ranked words over the existing Unit-Separator channel.
 26. `[x]` **Gesture unit tests** — direction ordering, exact segment math,
     bookend detection, empty-input rejection.
-27. `[ ]` **Live stroke capture** — feed real `MotionEvent` samples from the
-    keyboard view into the bridge (needs an on-device instrumentation test).
-28. `[ ]` **Layout grid export** — build the `[cx,cy,hw,hh]` byte grid from the
-    active `KeyboardLayouts` definition and cache it per configuration.
+27. `[~]` **Live stroke capture** — `Modifier.swipeTyping` observes the Initial
+    pointer pass and only consumes after a travel threshold, so taps are
+    untouched. Wired into the QWERTY board, gated on the engine being loaded.
+    Needs an on-device pass to confirm the threshold feels right.
+28. `[~]` **Layout grid export** — `GestureLayoutGrid.qwerty` reproduces the
+    Compose weight math analytically (with JVM unit tests). Needs a device
+    cross-check against real key bounds.
+29. `[x]` **End-to-end swipe test** — `tests/gesture_swipe.rs` swipes through the
+    real shipped dictionary and recovers "the", "hello", "world".
 
 ## Constraints
 

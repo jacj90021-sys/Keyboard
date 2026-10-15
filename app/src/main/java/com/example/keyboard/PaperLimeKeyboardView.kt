@@ -8,7 +8,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.keyboard.native.NativeEngineBridge
@@ -45,6 +48,7 @@ fun PaperLimeKeyboardView(
     }
 
     val context = LocalContext.current
+    val density = LocalDensity.current
     val learnedWordsFile = remember(context) { File(context.filesDir, "learned_words.tsv") }
     // Promote a word the user accepted or typed correctly, and persist the table
     // so the engine keeps adapting across sessions.
@@ -58,6 +62,10 @@ fun PaperLimeKeyboardView(
     var currentPrefix by remember { mutableStateOf("") }
     var rawPrefix by remember { mutableStateOf("") }
     var lastCommittedWord by remember { mutableStateOf("") }
+    // Gesture typing only engages once the native engine has actually loaded and
+    // mapped a dictionary, so the host-JVM/test path is completely unaffected.
+    var engineReady by remember { mutableStateOf(NativeEngineBridge.isLoaded()) }
+    var boardSize by remember { mutableStateOf(IntSize.Zero) }
     val dictionaryCandidates = remember(currentPrefix, lastCommittedWord) {
         SuggestionPlanner.candidates(
             prefix = currentPrefix,
@@ -103,6 +111,7 @@ fun PaperLimeKeyboardView(
         NativeEngineBridge.loadSampleDictionary(context)
         // Restore words this user has taught the engine in earlier sessions.
         NativeEngineBridge.dictionaryLoadPromotions(learnedWordsFile.absolutePath)
+        engineReady = NativeEngineBridge.isLoaded()
     }
 
     LaunchedEffect(prefs.startOpen) { isToolbarExpanded = prefs.startOpen }
@@ -136,6 +145,31 @@ fun PaperLimeKeyboardView(
 
     val showChevron = prefs.showChevron
     val toolbarVisible = prefs.toolbar && (!showChevron || isToolbarExpanded)
+
+    // Gesture typing runs only on the live letter board, never in a preview, an
+    // overlay, or before the dictionary has loaded.
+    val swipeEnabled = !preview && engineReady && mode == KeyboardMode.QWERTY && overlay == OverlayView.NONE
+    val swipeTyping = Modifier.swipeTyping(
+        enabled = swipeEnabled,
+        minTravelPx = with(density) { 24.dp.toPx() }
+    ) { stroke ->
+        if (boardSize.width > 0) {
+            val grid = GestureLayoutGrid.qwerty(
+                boardWidthPx = boardSize.width.toFloat(),
+                densityDpToPx = density.density,
+                keyHeightDp = prefs.keyHeight,
+                withNumberRow = prefs.numRow
+            )
+            val match = NativeEngineBridge.gestureDecode(stroke, grid, 4).firstOrNull()
+            if (!match.isNullOrBlank()) {
+                learnWord(match.lowercase())
+                lastCommittedWord = match.lowercase()
+                currentPrefix = ""
+                rawPrefix = ""
+                onCommitText("$match ")
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -214,6 +248,8 @@ fun PaperLimeKeyboardView(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
+                .onSizeChanged { boardSize = it }
+                .then(swipeTyping)
         ) {
             when (overlay) {
                 OverlayView.ALL_ACTIONS -> {
