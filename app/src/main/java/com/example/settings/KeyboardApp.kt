@@ -16,8 +16,6 @@ private val placeholderTitles = mapOf(
     "emoji" to "Emoji & media",
     "actions" to "Actions",
     "personalization" to "Personalization",
-    "sound" to "Sound & vibration",
-    "privacy" to "Privacy",
     "premium" to "Premium",
     "other" to "Other",
     "help" to "Help & feedback"
@@ -85,6 +83,8 @@ fun KeyboardApp(
                 "prediction" -> PredictionPage(prefs, repository) { page = null }
                 "swipe" -> SwipePage(prefs, repository) { page = null }
                 "personalization" -> PersonalizationPage { page = null }
+                "sound" -> SoundPage(prefs, repository) { page = null }
+                "privacy" -> PrivacyPage { page = null }
                 "about" -> AboutPage { page = null }
                 "appearance" -> PersonalizeScreen(
                     prefs = prefs,

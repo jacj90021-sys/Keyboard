@@ -180,7 +180,7 @@ fun AboutPage(onBack: () -> Unit) {
 }
 
 @Composable
-private fun Hint(text: String) {
+internal fun Hint(text: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
