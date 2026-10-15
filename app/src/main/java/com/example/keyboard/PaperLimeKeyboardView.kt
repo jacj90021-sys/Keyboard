@@ -44,7 +44,9 @@ fun PaperLimeKeyboardView(
     var currentPrefix by remember { mutableStateOf("") }
     var lastCommittedWord by remember { mutableStateOf("") }
     val dictionaryCandidates = remember(currentPrefix, lastCommittedWord) {
-        if (currentPrefix.length >= 2 && NativeEngineBridge.isLoaded()) {
+        if (!NativeEngineBridge.isLoaded()) {
+            emptyList()
+        } else if (currentPrefix.length >= 2) {
             val prefixes = NativeEngineBridge.dictionaryTopPrefixesContextual(
                 currentPrefix,
                 lastCommittedWord,
@@ -56,6 +58,8 @@ fun PaperLimeKeyboardView(
                 emptyList()
             }
             (prefixes + corrections).distinct().take(4)
+        } else if (lastCommittedWord.isNotBlank()) {
+            NativeEngineBridge.dictionaryTopNextWords(lastCommittedWord, 4).distinct().take(4)
         } else {
             emptyList()
         }

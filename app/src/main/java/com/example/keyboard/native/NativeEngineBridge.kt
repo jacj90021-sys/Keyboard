@@ -51,6 +51,12 @@ object NativeEngineBridge {
     ): String?
 
     @JvmStatic
+    private external fun rustDictionaryTopNextWords(
+        previous: String,
+        maxCount: Int
+    ): String?
+
+    @JvmStatic
     private external fun rustDictionaryCorrections(typo: String, maxCount: Int): String?
 
     private var loaded = false
@@ -99,6 +105,12 @@ object NativeEngineBridge {
     ): List<String> {
         if (!loaded) return emptyList()
         val raw = safeCallNullable { rustDictionaryTopPrefixesContextual(prefix, previous, maxCount) }
+        return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
+    }
+
+    fun dictionaryTopNextWords(previous: String, maxCount: Int): List<String> {
+        if (!loaded) return emptyList()
+        val raw = safeCallNullable { rustDictionaryTopNextWords(previous, maxCount) }
         return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
     }
 

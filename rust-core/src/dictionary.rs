@@ -283,6 +283,25 @@ impl MappedDictionary {
         candidates.into_iter().take(max).map(|(index, _)| index).collect()
     }
 
+    pub fn top_next_words(&self, previous: &str, max: usize) -> Vec<usize> {
+        let mut candidates: Vec<(usize, u64)> = (0..self.entry_count())
+            .map(|index| {
+                let key = self.key_at(index).unwrap_or_default();
+                let text = String::from_utf8_lossy(key);
+                let frequency = self
+                    .value_at(index)
+                    .and_then(|value| std::str::from_utf8(value).ok())
+                    .and_then(|value| value.trim().parse::<u64>().ok())
+                    .unwrap_or(0);
+                let score = frequency + (context_boost(previous, &text) * 4);
+                (index, score)
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        candidates.into_iter().take(max).map(|(index, _)| index).collect()
+    }
+
     pub fn nearest_words(&self, typo: &[u8], max: usize, max_distance: usize) -> Vec<usize> {
         let mut matches: Vec<(usize, usize)> = (0..self.entry_count())
             .filter_map(|index| {
