@@ -13,7 +13,7 @@ import org.robolectric.annotation.Config
  * a process with MainActivity, so any throw here is an app crash.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class ImeLifecycleTest {
 
     @Test

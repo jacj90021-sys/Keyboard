@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
  * will not do this on its own, so without this test a composition-time crash is invisible.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class ImeComposeTest {
 
     private fun composeAndLayout(view: View) {
