@@ -10,6 +10,7 @@ name = "keyboard_core"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
+jni = "0.21.1"
 # FFI-safe libc wrappers used for atomic, zero-copy memory mapping.
 libc = "0.2"
 
