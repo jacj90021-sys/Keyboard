@@ -85,6 +85,11 @@ the `rust`-prefixed names avoid overload clashes with Kotlin helpers.
 | `rustDictionaryTopNextWords(previous, max)` | likely next words |
 | `rustDictionaryCorrections(typo, max)` | edit-distance suggestions |
 | `rustGestureDecode(strokeXy, layoutXy, max)` | swipe trajectory → ranked words |
+| `rustMlLoadModel(path)` | load a LiteRT reranking model |
+| `rustMlReset()` | drop back to the built-in scorer |
+| `rustMlStatus()` | active backend, e.g. `heuristic:linear-fallback` |
+| `rustMlRuntimeReport()` | which inference runtimes are present |
+| `rustMlRank(prefix, previous, max)` | ML-reranked candidates |
 
 List results are returned as a single string joined by the ASCII Unit
 Separator (`U+001F`), which keeps the boundary allocation-free per item.
@@ -99,9 +104,26 @@ Separator (`U+001F`), which keeps the boundary allocation-free per item.
 - Tests cover header validation, bounds, ordering, ranking, and a pseudo-random
   no-panic loader sweep.
 
+## Inference layer
+
+`src/inference/` binds LiteRT (TensorFlow Lite) and ONNX Runtime through
+`dlopen`, never at link time, so `libkeyboard_core.so` loads on any device:
+
+- `tflite.rs` — resolves the LiteRT C API, loads a `.tflite` model and runs a
+  single-input/single-output float graph. Missing runtime or bad model returns
+  `None`; nothing panics.
+- `onnx.rs` — detects ONNX Runtime and reports its version. A full `OrtSession`
+  needs the `OrtApi` vtable from the header and is deliberately not faked.
+- `reranker.rs` — one `Reranker` trait with two implementations over a shared
+  eight-feature vector: a pure-Rust linear `HeuristicReranker` (always on) and a
+  `TfLiteReranker` that takes over when a model loads and defers to the
+  heuristic if any invoke fails.
+
+`RuntimeReport::detect()` summarises what the device exposes.
+
 ## Not here yet (deliberately)
 
-Language-model reranking, voice, and the model runtime layer are still out of
-scope. Gesture/swipe decoding now lives in `src/gesture.rs`: an original
-trajectory scorer using point-to-segment distance, cosine alignment, and a
-compound-cost model, wired to Kotlin via `rustGestureDecode`.
+Voice input and a trained language model are still out of scope. Gesture/swipe
+decoding lives in `src/gesture.rs`: an original trajectory scorer using
+point-to-segment distance, cosine alignment, and a compound-cost model, wired to
+Kotlin via `rustGestureDecode`.

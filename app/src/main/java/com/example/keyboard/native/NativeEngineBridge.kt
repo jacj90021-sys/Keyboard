@@ -91,6 +91,21 @@ object NativeEngineBridge {
         maxCount: Int
     ): String?
 
+    @JvmStatic
+    private external fun rustMlLoadModel(path: String): Int
+
+    @JvmStatic
+    private external fun rustMlReset(): Int
+
+    @JvmStatic
+    private external fun rustMlStatus(): String?
+
+    @JvmStatic
+    private external fun rustMlRuntimeReport(): String?
+
+    @JvmStatic
+    private external fun rustMlRank(prefix: String, previous: String, maxCount: Int): String?
+
     private var loaded = false
 
     fun isLoaded(): Boolean = loaded
@@ -197,6 +212,33 @@ object NativeEngineBridge {
     fun gestureDecode(strokeXy: FloatArray, layoutXy: FloatArray, maxCount: Int): List<String> {
         if (!loaded) return emptyList()
         val raw = safeCallNullable { rustGestureDecode(strokeXy, layoutXy, maxCount) }
+        return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
+    }
+
+    /**
+     * Load a LiteRT reranking model. The engine keeps working (on its built-in
+     * linear fallback) when the model or runtime is unavailable.
+     */
+    fun mlLoadModel(path: String): Int =
+        if (loaded) safeCall { rustMlLoadModel(path) } else -1
+
+    /** Drop back to the built-in pure-Rust scorer. */
+    fun mlReset(): Int = if (loaded) safeCall { rustMlReset() } else -1
+
+    /** e.g. `heuristic:linear-fallback` or `litert:liblitert.so`. */
+    fun mlStatus(): String? = if (loaded) safeCallNullable { rustMlStatus() } else null
+
+    /** Which inference runtimes are present, for diagnostics. */
+    fun mlRuntimeReport(): String? =
+        if (loaded) safeCallNullable { rustMlRuntimeReport() } else null
+
+    /**
+     * Rerank dictionary candidates through the ML layer. Ordering is best-first;
+     * with no model loaded this still returns sensible dictionary-backed order.
+     */
+    fun mlRank(prefix: String, previous: String, maxCount: Int): List<String> {
+        if (!loaded) return emptyList()
+        val raw = safeCallNullable { rustMlRank(prefix, previous, maxCount) }
         return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
     }
 

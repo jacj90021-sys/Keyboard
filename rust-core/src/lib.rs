@@ -5,8 +5,10 @@
 
 mod dictionary;
 mod gesture;
+mod inference;
 pub use dictionary::{DictionaryError, MappedDictionary, PromotionTable};
 pub use gesture::{rank_stroke, trace_cost, Cell, Trace, TraceVerdict, TraceWeights};
+pub use inference::{BackendKind, MlEngine, RankContext, RuntimeReport};
 
 // Transparency: FFI boundary requires explicitly scoped unsafe attributes/blocks.
 
@@ -649,6 +651,167 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustG
     );
 
     pack_indices(&mut env, dictionary, &indices)
+}
+
+/// Active ML engine. Starts on the pure-Rust fallback and upgrades to LiteRT
+/// only if a model loads, so the static is always usable.
+static ML_ENGINE: std::sync::LazyLock<Mutex<MlEngine>> =
+    std::sync::LazyLock::new(|| Mutex::new(MlEngine::new()));
+
+/// Maximum candidates considered for ML reranking, to bound the work per call.
+const ML_CANDIDATE_LIMIT: usize = 64;
+
+/// Load a `.tflite` reranking model. Returns 0 on success, negative otherwise.
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustMlLoadModel(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) -> jint {
+    let requested: String = match env.get_string(&path) {
+        Ok(value) => value.into(),
+        Err(_) => return -1,
+    };
+    match ML_ENGINE.lock() {
+        Ok(mut engine) => engine.load_model(Path::new(&requested)),
+        Err(_) => -3,
+    }
+}
+
+/// Drop back to the heuristic reranker.
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustMlReset(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    match ML_ENGINE.lock() {
+        Ok(mut engine) => {
+            engine.reset();
+            0
+        }
+        Err(_) => -3,
+    }
+}
+
+/// Status string such as `heuristic:linear-fallback` or `litert:liblitert.so`.
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustMlStatus(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jstring {
+    let status = match ML_ENGINE.lock() {
+        Ok(engine) => engine.status(),
+        Err(_) => "unavailable".to_string(),
+    };
+    match env.new_string(status) {
+        Ok(result) => result.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Which inference runtimes this device exposes, for diagnostics.
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustMlRuntimeReport(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jstring {
+    match env.new_string(RuntimeReport::detect().summary()) {
+        Ok(result) => result.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Rerank the dictionary candidates for `prefix`/`previous` through the ML
+/// layer and return the top `max` words. Falls back to dictionary order when no
+/// model is loaded, since the heuristic scorer reproduces that ordering's
+/// intent.
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustMlRank(
+    mut env: JNIEnv,
+    _class: JClass,
+    prefix: JString,
+    previous: JString,
+    max_count: jint,
+) -> jni::sys::jstring {
+    let requested: String = match env.get_string(&prefix) {
+        Ok(value) => value.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let prior: String = match env.get_string(&previous) {
+        Ok(value) => value.into(),
+        Err(_) => String::new(),
+    };
+    let max = if max_count <= 0 {
+        4usize
+    } else {
+        max_count as usize
+    };
+    let prefix_bytes = requested.as_bytes();
+
+    let promotions = match PROMOTIONS.lock() {
+        Ok(guard) => guard,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let mut engine = match ML_ENGINE.lock() {
+        Ok(guard) => guard,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let dictionary = match DICTIONARY.lock() {
+        Ok(guard) => guard,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let dictionary = match dictionary.as_ref() {
+        Some(dictionary) => dictionary,
+        None => return std::ptr::null_mut(),
+    };
+
+    // Gather the prefix range as (word, effective frequency) pairs. The learned
+    // promotions are folded into the frequency so the ML layer sees them too.
+    let start = dictionary.prefix_start(prefix_bytes);
+    let end = dictionary.prefix_end(prefix_bytes);
+    let mut items: Vec<(Vec<u8>, u64)> = Vec::new();
+    for index in start..end {
+        if items.len() >= ML_CANDIDATE_LIMIT {
+            break;
+        }
+        if let Some(key) = dictionary.key_at(index) {
+            let frequency = dictionary.frequency_at(index) + promotions.boost(key);
+            items.push((key.to_vec(), frequency));
+        }
+    }
+    if items.is_empty() {
+        // No prefix matches: fall back to the next-word candidates so the ML
+        // layer still has something meaningful to rank.
+        for index in dictionary.top_next_words(&prior, ML_CANDIDATE_LIMIT) {
+            if let Some(key) = dictionary.key_at(index) {
+                let frequency = dictionary.frequency_at(index) + promotions.boost(key);
+                items.push((key.to_vec(), frequency));
+            }
+        }
+    }
+
+    let context = RankContext {
+        prefix: prefix_bytes,
+        previous: prior.as_bytes(),
+    };
+    let order = engine.rank(&items, context);
+
+    let mut output = String::new();
+    let mut first = true;
+    for &position in order.iter().take(max) {
+        if let Some((word, _)) = items.get(position) {
+            if !first {
+                output.push('\u{001f}');
+            }
+            first = false;
+            output.push_str(&String::from_utf8_lossy(word));
+        }
+    }
+
+    match env.new_string(output) {
+        Ok(result) => result.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[cfg(test)]

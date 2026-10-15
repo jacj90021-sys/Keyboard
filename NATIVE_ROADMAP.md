@@ -75,6 +75,21 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 29. `[x]` **End-to-end swipe test** — `tests/gesture_swipe.rs` swipes through the
     real shipped dictionary and recovers "the", "hello", "world".
 
+## Phase 6 — inference layer
+
+30. `[x]` **Runtime-loaded LiteRT binding** — `inference/tflite.rs` resolves the
+    TFLite C API via `dlopen` and runs a float model; missing runtime/model
+    degrades to `None`.
+31. `[x]` **ONNX detection** — `inference/onnx.rs` resolves `OrtApiBase` and
+    reads the version. Full session binding awaits the `OrtApi` vtable.
+32. `[x]` **Pluggable reranker** — shared 8-feature vector with a pure-Rust
+    linear fallback and a LiteRT implementation behind one trait.
+33. `[x]` **ML JNI surface** — `rustMlLoadModel/Reset/Status/RuntimeReport/Rank`.
+34. `[ ]` **Ship a counting model** — train/export a small `.tflite` reranker and
+    add it to `app/src/main/assets` (needs a training pipeline).
+35. `[ ]` **Feature parity test with the model** — golden outputs comparing the
+    LiteRT path against the heuristic on a fixed sample set.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.
