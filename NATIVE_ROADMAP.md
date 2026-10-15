@@ -29,7 +29,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
    once at runtime, binary-searched instead of linear-scanned.
 10. `[x]` **Large-dictionary test** — prove prefix/exact queries stay correct
     when the dictionary has tens of thousands of entries.
-11. `[ ]` **Bridge fallback tests** — assert the Kotlin wrappers degrade safely
+11. `[x]` **Bridge fallback tests** — assert the Kotlin wrappers degrade safely
     when the native library is not present.
 12. `[ ]` **Unified native suggest call** — one boundary call that merges
     prefix, context and correction results in Rust.
