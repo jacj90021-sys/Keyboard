@@ -56,6 +56,20 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 22. `[x]` **Contractions** in the word list (builder now allows apostrophes).
 23. `[x]` **Builder unit tests** (`tools/test_build_dictionary.py`), run in CI.
 
+## Phase 5 — gesture decoding
+
+24. `[x]` **Original swipe decoder** — cleanroom `gesture.rs`: point-to-segment
+    distance, directional (cosine) alignment, compound-cost normalization,
+    bookend grace. Independent of any third-party structure/naming.
+25. `[x]` **Gesture JNI surface** — `rustGestureDecode(strokeXy, layoutXy, max)`
+    returns ranked words over the existing Unit-Separator channel.
+26. `[x]` **Gesture unit tests** — direction ordering, exact segment math,
+    bookend detection, empty-input rejection.
+27. `[ ]` **Live stroke capture** — feed real `MotionEvent` samples from the
+    keyboard view into the bridge (needs an on-device instrumentation test).
+28. `[ ]` **Layout grid export** — build the `[cx,cy,hw,hh]` byte grid from the
+    active `KeyboardLayouts` definition and cache it per configuration.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

@@ -43,6 +43,7 @@ class NativeEngineBridgeFallbackTest {
         assertTrue(NativeEngineBridge.dictionaryTopNextWords("good", 4).isEmpty())
         assertTrue(NativeEngineBridge.dictionaryCorrections("teh", 4).isEmpty())
         assertTrue(NativeEngineBridge.dictionarySuggest("th", "", 4).isEmpty())
+        assertTrue(NativeEngineBridge.gestureDecode(floatArrayOf(), floatArrayOf(), 4).isEmpty())
         assertEquals(-1, NativeEngineBridge.dictionaryPromote("hello"))
         assertEquals(-1, NativeEngineBridge.dictionaryClearPromotions())
         assertEquals(0, NativeEngineBridge.dictionaryPromotionCount())

@@ -4,7 +4,9 @@
 //! and cross-compilation before importing any higher-level algorithms.
 
 mod dictionary;
+mod gesture;
 pub use dictionary::{DictionaryError, MappedDictionary, PromotionTable};
+pub use gesture::{rank_stroke, trace_cost, Cell, Trace, TraceVerdict, TraceWeights};
 
 // Transparency: FFI boundary requires explicitly scoped unsafe attributes/blocks.
 
@@ -101,7 +103,7 @@ pub extern "C" fn keyboard_core_ping(value: i32) -> i32 {
     value.wrapping_mul(2).wrapping_add(1)
 }
 
-use jni::objects::{JClass, JString};
+use jni::objects::{JClass, JFloatArray, JString};
 use jni::sys::jint;
 use jni::JNIEnv;
 use std::path::Path;
@@ -564,6 +566,89 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         },
         Err(_) => -3,
     }
+}
+
+/// Gesture decode boundary.
+///
+/// `stroke_xy` is a flat `[x0,y0,x1,y1,...]` buffer of finger samples and
+/// `layout_xy` is a flat 256-entry-per-char `[cx,cy,hw,hh]` grid indexed by the
+/// low byte of each dictionary key. Returns the top matches joined by Unit
+/// Separator, mirroring the typing suggest surface so the Kotlin side reuses the
+/// same split helper.
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustGestureDecode(
+    mut env: JNIEnv,
+    _class: JClass,
+    stroke_xy: JFloatArray,
+    layout_xy: JFloatArray,
+    max_count: jint,
+) -> jni::sys::jstring {
+    let stroke_len = env.get_array_length(&stroke_xy).unwrap_or(0) as usize;
+    let layout_len = env.get_array_length(&layout_xy).unwrap_or(0) as usize;
+    if stroke_len < 4 || layout_len < 4 || !layout_len.is_multiple_of(4) {
+        return std::ptr::null_mut();
+    }
+
+    let mut stroke_buf = vec![0.0f32; stroke_len];
+    let mut layout_buf = vec![0.0f32; layout_len];
+    if env
+        .get_float_array_region(&stroke_xy, 0, &mut stroke_buf)
+        .is_err()
+    {
+        return std::ptr::null_mut();
+    }
+    if env
+        .get_float_array_region(&layout_xy, 0, &mut layout_buf)
+        .is_err()
+    {
+        return std::ptr::null_mut();
+    }
+
+    let stroke: Vec<Trace> = stroke_buf
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| Trace::new(c[0], c[1]))
+        .collect();
+
+    // Build the byte -> cell lookup from the flat grid. A zero half-extent means
+    // "key absent" and is skipped.
+    let mut grid: [Option<Cell>; 256] = [None; 256];
+    for (slot, quad) in layout_buf.as_chunks::<4>().0.iter().enumerate().take(256) {
+        let (cx, cy, hw, hh) = (quad[0], quad[1], quad[2], quad[3]);
+        if hw > 0.0 && hh > 0.0 {
+            grid[slot] = Some(Cell::new(cx, cy, hw, hh));
+        }
+    }
+
+    let max = if max_count <= 0 {
+        4usize
+    } else {
+        max_count as usize
+    };
+    let promotions = match PROMOTIONS.lock() {
+        Ok(guard) => guard,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let dictionary = match DICTIONARY.lock() {
+        Ok(guard) => guard,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let dictionary = match dictionary.as_ref() {
+        Some(dictionary) => dictionary,
+        None => return std::ptr::null_mut(),
+    };
+
+    let indices = gesture::rank_stroke(
+        &stroke,
+        dictionary,
+        &promotions,
+        |b| grid[b as usize],
+        gesture::TraceWeights::default(),
+        max,
+    );
+
+    pack_indices(&mut env, dictionary, &indices)
 }
 
 #[cfg(test)]

@@ -84,6 +84,13 @@ object NativeEngineBridge {
     @JvmStatic
     private external fun rustDictionaryCorrections(typo: String, maxCount: Int): String?
 
+    @JvmStatic
+    private external fun rustGestureDecode(
+        strokeXy: FloatArray,
+        layoutXy: FloatArray,
+        maxCount: Int
+    ): String?
+
     private var loaded = false
 
     fun isLoaded(): Boolean = loaded
@@ -179,6 +186,19 @@ object NativeEngineBridge {
     /** Native engine version string, or null when the library is unavailable. */
     fun engineVersion(): String? =
         if (loaded) safeCallNullable { rustEngineVersion() } else null
+
+    /**
+     * Decode a swipe stroke into ranked words.
+     *
+     * [strokeXy] is a flat `[x0,y0,x1,y1,...]` buffer of finger samples and
+     * [layoutXy] is a flat grid of `[cx,cy,halfWidth,halfHeight]` quads indexed
+     * by the ASCII byte of each key. Returns ranked candidates, best first.
+     */
+    fun gestureDecode(strokeXy: FloatArray, layoutXy: FloatArray, maxCount: Int): List<String> {
+        if (!loaded) return emptyList()
+        val raw = safeCallNullable { rustGestureDecode(strokeXy, layoutXy, maxCount) }
+        return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
+    }
 
     fun loadSampleDictionary(context: Context): Int {
         if (!loaded) tryLoad()

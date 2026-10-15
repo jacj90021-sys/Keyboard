@@ -84,6 +84,7 @@ the `rust`-prefixed names avoid overload clashes with Kotlin helpers.
 | `rustDictionaryTopPrefixesContextual(prefix, previous, max)` | + context boost |
 | `rustDictionaryTopNextWords(previous, max)` | likely next words |
 | `rustDictionaryCorrections(typo, max)` | edit-distance suggestions |
+| `rustGestureDecode(strokeXy, layoutXy, max)` | swipe trajectory → ranked words |
 
 List results are returned as a single string joined by the ASCII Unit
 Separator (`U+001F`), which keeps the boundary allocation-free per item.
@@ -100,5 +101,7 @@ Separator (`U+001F`), which keeps the boundary allocation-free per item.
 
 ## Not here yet (deliberately)
 
-Gesture/swipe geometry, language-model reranking, voice, and the model runtime
-layer. These are out of scope until the dictionary/suggestion layer is stable.
+Language-model reranking, voice, and the model runtime layer are still out of
+scope. Gesture/swipe decoding now lives in `src/gesture.rs`: an original
+trajectory scorer using point-to-segment distance, cosine alignment, and a
+compound-cost model, wired to Kotlin via `rustGestureDecode`.
