@@ -362,4 +362,27 @@ mod tests {
         assert_eq!(end, 3);
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn nearest_words_returns_sorted_close_matches() {
+        let path = temp_path("corrections");
+        write_dictionary(
+            &path,
+            &[
+                (b"card", b"1"),
+                (b"care", b"2"),
+                (b"cash", b"3"),
+                (b"dog", b"4"),
+            ],
+        );
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let matches = dictionary.nearest_words(b"cahd", 4, 2);
+        let keys: Vec<&[u8]> = matches
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert_eq!(keys, vec![b"card".as_slice(), b"care".as_slice(), b"cash".as_slice()]);
+        let _ = std::fs::remove_file(path);
+    }
 }
