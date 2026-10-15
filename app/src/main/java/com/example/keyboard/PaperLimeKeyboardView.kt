@@ -45,11 +45,12 @@ fun PaperLimeKeyboardView(
     val dictionaryCandidates = remember(currentPrefix) {
         if (currentPrefix.length >= 2 && NativeEngineBridge.isLoaded()) {
             val prefixes = NativeEngineBridge.dictionaryTopPrefixes(currentPrefix, 4)
-            if (prefixes.isNotEmpty()) {
-                prefixes
-            } else {
+            val corrections = if (prefixes.isEmpty()) {
                 NativeEngineBridge.dictionaryCorrections(currentPrefix, 4)
+            } else {
+                emptyList()
             }
+            (prefixes + corrections).distinct().take(4)
         } else {
             emptyList()
         }
