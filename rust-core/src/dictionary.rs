@@ -228,6 +228,59 @@ impl MappedDictionary {
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         candidates.into_iter().take(max).map(|(index, _)| index).collect()
     }
+
+    pub fn nearest_words(&self, typo: &[u8], max: usize, max_distance: usize) -> Vec<usize> {
+        let mut matches: Vec<(usize, usize)> = (0..self.entry_count())
+            .filter_map(|index| {
+                let key = self.key_at(index)?;
+                if key.len().abs_diff(typo.len()) > max_distance {
+                    return None;
+                }
+                let distance = levenshtein_distance(key, typo);
+                if distance == 0 || distance > max_distance {
+                    return None;
+                }
+                Some((index, distance))
+            })
+            .collect();
+
+        matches.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        matches
+            .into_iter()
+            .take(max)
+            .map(|(index, _)| index)
+            .collect()
+    }
+}
+
+fn levenshtein_distance(left: &[u8], right: &[u8]) -> usize {
+    if left.is_empty() {
+        return right.len();
+    }
+    if right.is_empty() {
+        return left.len();
+    }
+
+    let mut previous: Vec<usize> = (0..=right.len()).collect();
+    let mut current = vec![0usize; right.len() + 1];
+
+    for (i, left_byte) in left.iter().enumerate() {
+        current[0] = i + 1;
+        let mut minimum = current[0];
+        for (j, right_byte) in right.iter().enumerate() {
+            let deletion = previous[j + 1] + 1;
+            let insertion = current[j] + 1;
+            let substitution = previous[j] + usize::from(left_byte != right_byte);
+            current[j + 1] = deletion.min(insertion).min(substitution);
+            minimum = minimum.min(current[j + 1]);
+        }
+        if minimum > right.len().saturating_add(1) {
+            // Early exit for clearly unrelated lengths.
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+
+    previous[right.len()]
 }
 
 impl Drop for MappedDictionary {

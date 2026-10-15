@@ -43,6 +43,9 @@ object NativeEngineBridge {
     @JvmStatic
     private external fun rustDictionaryTopPrefixes(prefix: String, maxCount: Int): String?
 
+    @JvmStatic
+    private external fun rustDictionaryCorrections(typo: String, maxCount: Int): String?
+
     private var loaded = false
 
     fun isLoaded(): Boolean = loaded
@@ -79,6 +82,12 @@ object NativeEngineBridge {
     fun dictionaryTopPrefixes(prefix: String, maxCount: Int): List<String> {
         if (!loaded) return emptyList()
         val raw = safeCallNullable { rustDictionaryTopPrefixes(prefix, maxCount) }
+        return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
+    }
+
+    fun dictionaryCorrections(typo: String, maxCount: Int): List<String> {
+        if (!loaded) return emptyList()
+        val raw = safeCallNullable { rustDictionaryCorrections(typo, maxCount) }
         return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
     }
 
