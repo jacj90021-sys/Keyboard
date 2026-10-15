@@ -4,6 +4,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.*
 import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
+import com.example.keyboard.native.NativeEngineBridge
 
 private enum class AppScreen { Onboarding, Personalize, Settings }
 
@@ -34,6 +35,10 @@ fun KeyboardApp(
     onChooseKeyboard: () -> Unit
 ) {
     var screen by remember { mutableStateOf(AppScreen.Onboarding) }
+
+    LaunchedEffect(Unit) {
+        NativeEngineBridge.tryLoad()
+    }
     var page by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
