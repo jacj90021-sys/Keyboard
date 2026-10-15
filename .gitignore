@@ -15,3 +15,8 @@
 .cxx
 local.properties
 .env
+
+# Rust build artifacts
+rust-core/target/
+# Generated Android native libs
+app/src/main/jniLibs/
