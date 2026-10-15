@@ -1,0 +1,29 @@
+[package]
+name = "keyboard_core"
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[lib]
+name = "keyboard_core"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+# FFI-safe libc wrappers used for atomic, zero-copy memory mapping.
+libc = "0.2"
+
+[features]
+default = []
+ffi = []
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+opt-level = 0
+debug = true
