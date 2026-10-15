@@ -1,11 +1,20 @@
-//! Original swipe/gesture decoder for the PaperLime keyboard.
+//! Swipe / gesture stroke decoder for the PaperLime keyboard.
 //!
-//! Cleanroom implementation derived only from the *mathematical idea* of
-//! spatial stroke matching (point-to-segment distance, directional alignment,
-//! compound-cost normalization). It shares no structure, naming, or layout with
-//! any third-party engine. It is a self-contained value-type module: callers
-//! hand it a key grid and a finger stroke and get back ranked dictionary
-//! indices.
+//! The decoder walks a candidate word's key centres in order, letting each key
+//! claim the stretch of the stroke that actually goes for it. Three ideas drive
+//! the scoring, all expressed here in this module's own vocabulary:
+//!
+//! * **Normalised gates.** Every distance threshold is a fraction of the *key
+//!   pitch* (centre-to-centre distance between neighbouring keys), so the same
+//!   constants work on any grid density without retuning.
+//! * **Ordered claim.** Anchors are consumed left to right; each middle key must
+//!   be *approached* — the finger has to get closer to it at some point after the
+//!   previous key — not merely grazed while aiming elsewhere.
+//! * **Backtracking + stray.** Moving against the key-to-key direction, or
+//!   wandering off the line between two claimed keys, adds super-linear cost.
+//!
+//! It is a self-contained value-type module: callers hand it a key grid and a
+//! finger stroke and get back ranked dictionary indices.
 
 use crate::dictionary::{MappedDictionary, PromotionTable};
 
@@ -55,17 +64,17 @@ pub struct TraceVerdict {
     pub ended_on_mark: bool,
 }
 
-/// Tuning knobs. Defaults are sane for a ~100px key grid.
+/// Tuning knobs. Distance gates are all fractions of [`Self::key_pitch`], so
+/// absolute pixel size barely matters.
 #[derive(Clone, Copy, Debug)]
 pub struct TraceWeights {
-    /// How strongly the point-to-segment distance is counted.
+    /// Typical centre-to-centre distance between adjacent keys. Scales every
+    /// gate below.
+    pub key_pitch: f32,
+    /// How strongly measured gaps are counted.
     pub proximity_pull: f32,
-    /// How strongly opposing travel direction is punished.
-    pub heading_penalty: f32,
-    /// Extra cost added when the stroke drifts far off the whole polyline.
-    pub wander_penalty: f32,
-    /// Distance (px) at which proximity is considered fully satisfied.
-    pub reach: f32,
+    /// How strongly a doubled-back finger segment is punished.
+    pub backtrack_penalty: f32,
     /// Cost units subtracted for a clean start/end, to favour exact taps.
     pub bookend_grace: f32,
 }
@@ -73,10 +82,9 @@ pub struct TraceWeights {
 impl Default for TraceWeights {
     fn default() -> Self {
         Self {
+            key_pitch: 100.0,
             proximity_pull: 1.0,
-            heading_penalty: 6.0,
-            wander_penalty: 0.35,
-            reach: 70.0,
+            backtrack_penalty: 3.0,
             bookend_grace: 8.0,
         }
     }
@@ -119,8 +127,97 @@ fn inside(p: Trace, cell: Cell, margin: f32) -> bool {
         && (p.y - cell.centre.y).abs() <= cell.half_height + margin
 }
 
-/// Score how well `stroke` traces the polyline formed by `anchors` (the key
-/// centres of a candidate word, in order).
+/// Scan forward from `from` for the stroke *segment* that passes closest to
+/// `centre`. Returns `(claim index, gap)` only when the finger genuinely *went
+/// for* the key: the closest segment must lie after `from` and inside `gate`.
+///
+/// Measuring against segments (not raw samples) is what lets a sparsely-sampled
+/// stroke still credit a key it swept cleanly over.
+fn closest_approach(
+    stroke: &[Trace],
+    centre: Trace,
+    from: usize,
+    gate: f32,
+) -> Option<(usize, f32)> {
+    let mut best = f32::MAX;
+    let mut claim = from;
+    // Segment `i` runs from sample `i` to sample `i+1`; its claim index is `i+1`
+    // so the walk always advances past the segment it consumed.
+    for i in from..stroke.len().saturating_sub(1) {
+        let d = drop_to_segment(centre, stroke[i], stroke[i + 1]);
+        if d < best {
+            best = d;
+            claim = i + 1;
+        }
+    }
+    // `claim == from` means no segment after `from` beat the starting point —
+    // the finger never actually approached within this stretch.
+    if claim == from || best > gate {
+        return None;
+    }
+    Some((claim, best))
+}
+
+/// Charge for moving against the key-to-key direction between two claimed
+/// samples. Returns 0 when aligned or when either vector is degenerate.
+fn backtrack_cost(
+    stroke: &[Trace],
+    i0: usize,
+    i1: usize,
+    a_from: Trace,
+    a_to: Trace,
+    knob: TraceWeights,
+) -> f32 {
+    if i1 <= i0 {
+        return 0.0;
+    }
+    let sx = stroke[i1].x - stroke[i0].x;
+    let sy = stroke[i1].y - stroke[i0].y;
+    let ax = a_to.x - a_from.x;
+    let ay = a_to.y - a_from.y;
+    let stroke_len = (sx * sx + sy * sy).sqrt();
+    let anchor_len = (ax * ax + ay * ay).sqrt();
+    if stroke_len <= f32::EPSILON || anchor_len <= f32::EPSILON {
+        return 0.0;
+    }
+    let agreement = (sx * ax + sy * ay) / (stroke_len * anchor_len);
+    if agreement < 0.0 {
+        knob.backtrack_penalty * stroke_len * -agreement
+    } else {
+        0.0
+    }
+}
+
+/// Mean stray distance of the samples in `from..end` (end-exclusive) from the
+/// straight line between the two claimed anchors, shaped super-linearly.
+/// Returns `f32::MAX` when any sample wanders past `gate` (the stroke went
+/// somewhere the word cannot justify).
+fn stray_between(
+    stroke: &[Trace],
+    from: usize,
+    end: usize,
+    a_from: Trace,
+    a_to: Trace,
+    gate: f32,
+) -> f32 {
+    if end <= from {
+        return 0.0;
+    }
+    let mut sum = 0.0f32;
+    let mut count = 0usize;
+    for sample in stroke.iter().take(end).skip(from) {
+        let d = drop_to_segment(*sample, a_from, a_to);
+        if d > gate {
+            return f32::MAX;
+        }
+        sum += d;
+        count += 1;
+    }
+    (sum / count as f32).powf(1.75)
+}
+
+/// Score how well `stroke` traces the key centres of `anchors` (a candidate
+/// word, in order).
 ///
 /// Returns a [`TraceVerdict`]. Lower `cost` is better; `f32::MAX` marks a
 /// candidate the stroke cannot plausibly represent.
@@ -133,12 +230,15 @@ pub fn trace_cost(stroke: &[Trace], anchors: &[Cell], knob: TraceWeights) -> Tra
         };
     }
 
-    let started = inside(stroke[0], anchors[0], knob.reach);
-    let ended = inside(
-        stroke[stroke.len() - 1],
-        anchors[anchors.len() - 1],
-        knob.reach,
-    );
+    let pitch = knob.key_pitch.max(1.0);
+    let last_sample = stroke.len() - 1;
+    let started = inside(stroke[0], anchors[0], pitch * 0.5);
+    let ended = inside(stroke[last_sample], anchors[anchors.len() - 1], pitch * 0.9);
+    let bookend = TraceVerdict {
+        cost: f32::MAX,
+        started_on_mark: started,
+        ended_on_mark: ended,
+    };
 
     // A single-key "word" is just a tap: only the hit test matters.
     if anchors.len() == 1 {
@@ -150,104 +250,77 @@ pub fn trace_cost(stroke: &[Trace], anchors: &[Cell], knob: TraceWeights) -> Tra
         };
     }
 
-    let mut aggregate = 0.0f32;
-    let mut samples = 0usize;
+    // First key: the finger must begin near it.
+    let open_gap = sep2(stroke[0], anchors[0].centre).sqrt();
+    if open_gap > pitch * 0.45 {
+        return bookend;
+    }
+    let mut total = knob.proximity_pull * open_gap;
 
-    // For every finger sample, find its cheapest attachment to any edge of the
-    // candidate polyline. Summing this over the stroke is the core compound
-    // spatial cost.
-    for s in stroke {
-        let mut best = f32::MAX;
-        for edge in 0..anchors.len() - 1 {
-            let d = drop_to_segment(*s, anchors[edge].centre, anchors[edge + 1].centre);
-            if d < best {
-                best = d;
-            }
-        }
-        // Soft saturation: beyond `reach`, extra distance is still counted but
-        // with diminishing shock, so a long stray tail doesn't dominate.
-        let shaped = if best <= knob.reach {
-            best
-        } else {
-            knob.reach + (best - knob.reach) * 0.5
+    // Middle keys: each must be approached, and hops are charged for moving
+    // against the key direction and for straying off the line.
+    let mut cursor = 0usize;
+    let mut prev_claim = 0usize;
+    let mut prev_centre = anchors[0].centre;
+    for anchor in anchors.iter().take(anchors.len() - 1).skip(1) {
+        let centre = anchor.centre;
+        let Some((claim, gap)) = closest_approach(stroke, centre, cursor, pitch * 0.6) else {
+            return bookend;
         };
-        aggregate += shaped;
-        samples += 1;
-    }
-
-    let mean_deviation = if samples == 0 {
-        f32::MAX
-    } else {
-        aggregate / samples as f32
-    };
-    if !mean_deviation.is_finite() {
-        return TraceVerdict {
-            cost: f32::MAX,
-            started_on_mark: started,
-            ended_on_mark: ended,
-        };
-    }
-
-    // Directional alignment: compare the finger's net travel against the
-    // candidate's net direction. Moving the wrong way is heavily punished.
-    let stroke_vec = (
-        stroke[stroke.len() - 1].x - stroke[0].x,
-        stroke[stroke.len() - 1].y - stroke[0].y,
-    );
-    let anchor_vec = (
-        anchors[anchors.len() - 1].centre.x - anchors[0].centre.x,
-        anchors[anchors.len() - 1].centre.y - anchors[0].centre.y,
-    );
-    let heading_penalty = heading_mismatch(stroke_vec, anchor_vec, knob);
-
-    // Wander penalty: how far the stroke's farthest sample strays from the
-    // polyline. Rewards a tight, deliberate path.
-    let mut worst = 0.0f32;
-    for s in stroke {
-        let mut best = f32::MAX;
-        for edge in 0..anchors.len() - 1 {
-            let d = drop_to_segment(*s, anchors[edge].centre, anchors[edge + 1].centre);
-            if d < best {
-                best = d;
-            }
+        total += knob.proximity_pull * gap.powf(1.5);
+        total += backtrack_cost(stroke, prev_claim, claim, prev_centre, centre, knob);
+        let stray = stray_between(stroke, prev_claim, claim, prev_centre, centre, pitch * 0.7);
+        if stray == f32::MAX {
+            return bookend;
         }
-        if best > worst && best.is_finite() {
-            worst = best;
-        }
-    }
-    let wander = knob.wander_penalty * worst;
+        total += stray;
 
-    let mut cost = knob.proximity_pull * mean_deviation + heading_penalty + wander;
+        prev_claim = claim;
+        prev_centre = centre;
+        cursor = claim;
+    }
+
+    // Last key: the finger must finish near it, and the tail must not wander.
+    let last_centre = anchors[anchors.len() - 1].centre;
+    let close_gap = sep2(stroke[last_sample], last_centre).sqrt();
+    if close_gap > pitch * 0.9 {
+        return bookend;
+    }
+    total += knob.proximity_pull * close_gap;
+    total += backtrack_cost(
+        stroke,
+        prev_claim,
+        last_sample,
+        prev_centre,
+        last_centre,
+        knob,
+    );
+    let tail_stray = stray_between(
+        stroke,
+        prev_claim,
+        last_sample,
+        prev_centre,
+        last_centre,
+        pitch * 0.7,
+    );
+    if tail_stray == f32::MAX {
+        return bookend;
+    }
+    total += tail_stray;
 
     // Bookend grace: nudge clean start/end matches ahead of sloppy ones.
     if started {
-        cost -= knob.bookend_grace;
+        total -= knob.bookend_grace;
     }
     if ended {
-        cost -= knob.bookend_grace;
+        total -= knob.bookend_grace;
     }
 
     TraceVerdict {
-        cost: if cost.is_finite() { cost } else { f32::MAX },
+        cost: if total.is_finite() { total } else { f32::MAX },
         started_on_mark: started,
         ended_on_mark: ended,
     }
-}
-
-/// Penalty for disagreement between the stroke's travel direction and the
-/// candidate's travel direction, using the normalised dot product (cosine).
-fn heading_mismatch(stroke_vec: (f32, f32), anchor_vec: (f32, f32), knob: TraceWeights) -> f32 {
-    let (sx, sy) = stroke_vec;
-    let (ax, ay) = anchor_vec;
-    let s_len = (sx * sx + sy * sy).sqrt();
-    let a_len = (ax * ax + ay * ay).sqrt();
-    if s_len <= f32::EPSILON || a_len <= f32::EPSILON {
-        return 0.0;
-    }
-    let dot = sx * ax + sy * ay;
-    let cosine = (dot / (s_len * a_len)).clamp(-1.0, 1.0);
-    // cosine == 1 -> aligned (0 penalty); cosine == -1 -> reversed (max).
-    knob.heading_penalty * (1.0 - cosine) * 0.5
 }
 
 /// Cheap pre-filter: estimate a candidate's cost without a full pass, so obvious
@@ -267,8 +340,8 @@ fn optimistic_floor(stroke: &[Trace], anchors: &[Cell]) -> f32 {
 /// Ranked swipe decode: scan the dictionary, score every key whose length is
 /// plausible for the stroke, and return the best `max` indices (best first).
 ///
-/// `key_centres` maps a dictionary key byte to its grid cell via `locate`, so
-/// this module stays independent of any specific layout.
+/// `locate` maps a dictionary key byte to its grid cell, so this module stays
+/// independent of any specific layout.
 pub fn rank_stroke<F>(
     stroke: &[Trace],
     dictionary: &MappedDictionary,
@@ -290,7 +363,8 @@ where
     for pair in stroke.windows(2) {
         span += sep2(pair[0], pair[1]).sqrt();
     }
-    let max_keys = ((span / (knob.reach * 0.5)).ceil() as usize).max(2);
+    let pitch = knob.key_pitch.max(1.0);
+    let max_keys = ((span / (pitch * 0.5)).ceil() as usize).max(2);
     let min_keys = 2usize;
 
     let mut scored: Vec<(f32, usize)> = Vec::new();
@@ -436,5 +510,64 @@ mod tests {
             Trace::new(100.0, 0.0),
         );
         assert!((d2 - 50.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn gates_scale_with_key_pitch() {
+        // A stroke that runs 40px above the key row clears the gates on a coarse
+        // (100px-pitch) grid but is rejected on a fine (20px-pitch) one, because
+        // every distance gate is a fraction of the pitch.
+        let stroke = vec![
+            Trace::new(0.0, 40.0),
+            Trace::new(100.0, 40.0),
+            Trace::new(200.0, 40.0),
+        ];
+        let coarse = TraceWeights::default();
+        let fine = TraceWeights {
+            key_pitch: 20.0,
+            ..TraceWeights::default()
+        };
+        let ok = trace_cost(&stroke, &anchors_for(b"abc"), coarse).cost;
+        let rejected = trace_cost(&stroke, &anchors_for(b"abc"), fine).cost;
+        assert!(ok.is_finite(), "coarse grid should accept the stroke");
+        assert_eq!(rejected, f32::MAX, "fine grid should reject the stroke");
+    }
+
+    #[test]
+    fn doubling_back_is_charged() {
+        // Same endpoints, but the middle sample doubles back toward the start.
+        let clean = vec![
+            Trace::new(0.0, 0.0),
+            Trace::new(100.0, 0.0),
+            Trace::new(200.0, 0.0),
+        ];
+        let doubled = vec![
+            Trace::new(0.0, 0.0),
+            Trace::new(20.0, 0.0),
+            Trace::new(200.0, 0.0),
+        ];
+        let knob = TraceWeights::default();
+        let a = trace_cost(&clean, &anchors_for(b"abc"), knob);
+        let b = trace_cost(&doubled, &anchors_for(b"abc"), knob);
+        assert!(
+            a.cost <= b.cost,
+            "clean ({}) should not cost more than doubled-back ({})",
+            a.cost,
+            b.cost
+        );
+    }
+
+    #[test]
+    fn grazing_a_key_while_aiming_elsewhere_is_rejected() {
+        // Stroke goes a -> b -> c, so "adc" (which needs a detour down to d)
+        // must be rejected outright rather than scored.
+        let stroke = vec![
+            Trace::new(0.0, 0.0),
+            Trace::new(100.0, 0.0),
+            Trace::new(200.0, 0.0),
+        ];
+        let knob = TraceWeights::default();
+        let verdict = trace_cost(&stroke, &anchors_for(b"adc"), knob);
+        assert_eq!(verdict.cost, f32::MAX);
     }
 }
