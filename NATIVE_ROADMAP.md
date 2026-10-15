@@ -20,7 +20,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
    merge rules into a pure function with unit tests.
 6. `[x]` **Dictionary build tool** — `tools/build_dictionary.py` + curated
    word list, regenerate the shipped `keyboard_dictionary.bin`.
-7. `[ ]` **Instrumentation smoke test** — native load/init/query on device.
+7. `[x]` **Instrumentation smoke test** — native load/init/query on device.
 8. `[ ]` **Docs** — document the `PLKD` format and the JNI surface.
 
 ## Constraints
