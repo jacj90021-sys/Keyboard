@@ -38,6 +38,15 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
+      - name: Verify dictionary asset matches word list
+        run: |
+          python3 tools/build_dictionary.py
+          git diff --exit-code -- app/src/main/assets/keyboard_dictionary.bin
+
+      - name: Run Rust tests
+        working-directory: rust-core
+        run: cargo test
+
       - name: Build Rust Android library
         working-directory: rust-core
         run: |
@@ -45,6 +54,9 @@ jobs:
           cargo ndk -t aarch64-linux-android build --release
           mkdir -p ../app/src/main/jniLibs/arm64-v8a
           cp target/aarch64-linux-android/release/libkeyboard_core.so ../app/src/main/jniLibs/arm64-v8a/
+
+      - name: Run Android unit tests
+        run: ./gradlew testDebugUnitTest
 
       - name: Build Android APK
         run: ./gradlew assembleDebug
