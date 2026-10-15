@@ -2,6 +2,8 @@ package com.example.settings
 
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.*
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
 import com.example.keyboard.native.NativeEngineBridge
@@ -35,9 +37,11 @@ fun KeyboardApp(
     onChooseKeyboard: () -> Unit
 ) {
     var screen by remember { mutableStateOf(AppScreen.Onboarding) }
+    val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(context) {
         NativeEngineBridge.tryLoad()
+        NativeEngineBridge.loadSampleDictionary(context)
     }
     var page by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()

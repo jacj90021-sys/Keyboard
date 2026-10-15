@@ -1,5 +1,9 @@
 package com.example.keyboard.native
 
+import android.content.Context
+import java.io.File
+import java.io.FileOutputStream
+
 /**
  * Contract for the Rust-backed keyboard core.
  *
@@ -21,6 +25,21 @@ object NativeEngineBridge {
     @JvmStatic
     private external fun rustPing(value: Int): Int
 
+    @JvmStatic
+    private external fun rustLoadDictionary(path: String): Int
+
+    @JvmStatic
+    private external fun rustDictionarySize(): Int
+
+    @JvmStatic
+    private external fun rustDictionaryExactValue(key: String): String?
+
+    @JvmStatic
+    private external fun rustDictionaryPrefixCount(prefix: String): Int
+
+    @JvmStatic
+    private external fun rustDictionaryPrefixKey(prefix: String, index: Int): String?
+
     private var loaded = false
 
     fun isLoaded(): Boolean = loaded
@@ -40,6 +59,42 @@ object NativeEngineBridge {
     fun shutdownEngine(): Int = if (loaded) safeCall { rustShutdownEngine() } else -1
     fun healthCheck(): Int = if (loaded) safeCall { rustHealthCheck() } else -1
     fun ping(value: Int): Int = if (loaded) safeCall { rustPing(value) } else -1
+
+    fun loadDictionary(path: String): Int = if (loaded) safeCall { rustLoadDictionary(path) } else -1
+
+    fun dictionarySize(): Int = if (loaded) safeCall { rustDictionarySize() } else 0
+
+    fun dictionaryExactValue(key: String): String? =
+        if (loaded) safeCallNullable { rustDictionaryExactValue(key) } else null
+
+    fun dictionaryPrefixCount(prefix: String): Int =
+        if (loaded) safeCall { rustDictionaryPrefixCount(prefix) } else 0
+
+    fun dictionaryPrefixKey(prefix: String, index: Int): String? =
+        if (loaded) safeCallNullable { rustDictionaryPrefixKey(prefix, index) } else null
+
+    fun loadSampleDictionary(context: Context): Int {
+        if (!loaded) tryLoad()
+        if (!loaded) return -1
+
+        val target = File(context.filesDir, "keyboard_dictionary.bin")
+        if (!target.exists()) {
+            context.assets.open("keyboard_dictionary.bin").use { input ->
+                FileOutputStream(target).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        return loadDictionary(target.absolutePath)
+    }
+
+    private inline fun safeCallNullable(block: () -> String?): String? {
+        return try {
+            block()
+        } catch (_: Throwable) {
+            null
+        }
+    }
 
     private inline fun safeCall(block: () -> Int): Int {
         return try {

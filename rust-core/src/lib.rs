@@ -120,3 +120,124 @@ mod tests {
         let _ = keyboard_core_shutdown();
     }
 }
+
+use jni::JNIEnv;
+use jni::objects::{JClass, JString};
+use jni::sys::jint;
+use std::path::Path;
+use std::sync::Mutex;
+
+static DICTIONARY: Mutex<Option<MappedDictionary>> = Mutex::new(None);
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustLoadDictionary(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) -> jint {
+    let loaded_path: String = match env.get_string(&path) {
+        Ok(value) => value.into(),
+        Err(_) => return -1,
+    };
+
+    match MappedDictionary::load(Path::new(&loaded_path)) {
+        Ok(dictionary) => {
+            if let Ok(mut guard) = DICTIONARY.lock() {
+                *guard = Some(dictionary);
+                0
+            } else {
+                -3
+            }
+        }
+        Err(_) => -2,
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionarySize(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    if let Ok(guard) = DICTIONARY.lock() {
+        guard.as_ref().map(|d| d.entry_count() as i32).unwrap_or(0)
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryExactValue(
+    mut env: JNIEnv,
+    _class: JClass,
+    key: JString,
+) -> jni::sys::jstring {
+    let requested: String = match env.get_string(&key) {
+        Ok(value) => value.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let bytes = requested.as_bytes();
+    if let Ok(guard) = DICTIONARY.lock() {
+        if let Some(dictionary) = guard.as_ref() {
+            if let Some(index) = dictionary.exact_match(bytes) {
+                if let Some(value) = dictionary.value_at(index) {
+                    if let Ok(result) = env.new_string(String::from_utf8_lossy(value)) {
+                        return result.into_raw();
+                    }
+                }
+            }
+        }
+    }
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryPrefixCount(
+    mut env: JNIEnv,
+    _class: JClass,
+    prefix: JString,
+) -> jint {
+    let requested: String = match env.get_string(&prefix) {
+        Ok(value) => value.into(),
+        Err(_) => return 0,
+    };
+
+    if let Ok(guard) = DICTIONARY.lock() {
+        if let Some(dictionary) = guard.as_ref() {
+            let start = dictionary.prefix_start(requested.as_bytes());
+            let end = dictionary.prefix_end(requested.as_bytes());
+            return (end.saturating_sub(start)) as i32;
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryPrefixKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    prefix: JString,
+    index: jint,
+) -> jni::sys::jstring {
+    let requested: String = match env.get_string(&prefix) {
+        Ok(value) => value.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    if index < 0 {
+        return std::ptr::null_mut();
+    }
+
+    if let Ok(guard) = DICTIONARY.lock() {
+        if let Some(dictionary) = guard.as_ref() {
+            let start = dictionary.prefix_start(requested.as_bytes());
+            let key = dictionary.key_at(start + index as usize);
+            if let Some(key_bytes) = key {
+                if let Ok(result) = env.new_string(String::from_utf8_lossy(key_bytes)) {
+                    return result.into_raw();
+                }
+            }
+        }
+    }
+    std::ptr::null_mut()
+}
