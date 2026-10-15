@@ -19,7 +19,7 @@ import com.example.keyboard.getPalette
 import com.example.ui.theme.Tokens
 
 @Composable
-private fun PageScaffold(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+internal fun PageScaffold(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize().background(Tokens.Paper),
         contentAlignment = Alignment.TopCenter
@@ -41,7 +41,7 @@ private fun PageScaffold(title: String, onBack: () -> Unit, content: @Composable
 }
 
 @Composable
-private fun SwitchCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun SwitchCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -53,7 +53,7 @@ private fun SwitchCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun Divider() {
+internal fun Divider() {
     Box(
         modifier = Modifier
             .fillMaxWidth()

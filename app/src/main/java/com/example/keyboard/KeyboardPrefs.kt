@@ -26,6 +26,7 @@ object PrefKeys {
     val fn = booleanPreferencesKey("fn")
     val popups = booleanPreferencesKey("popups")
     val autoCorrect = booleanPreferencesKey("autoCorrect")
+    val swipeTyping = booleanPreferencesKey("swipeTyping")
     val onboardingDone = booleanPreferencesKey("onboardingDone")
 }
 
@@ -45,6 +46,7 @@ data class KeyboardPrefs(
     val fn: Boolean = false,
     val popups: Boolean = true,
     val autoCorrect: Boolean = true,
+    val swipeTyping: Boolean = true,
     val onboardingDone: Boolean = false
 ) {
     val showChevron: Boolean get() = toolbar && suggestions && arrow
@@ -65,6 +67,7 @@ class KeyboardPrefsRepository(private val context: Context) {
             fn = p[PrefKeys.fn] ?: false,
             popups = p[PrefKeys.popups] ?: true,
             autoCorrect = p[PrefKeys.autoCorrect] ?: true,
+            swipeTyping = p[PrefKeys.swipeTyping] ?: true,
             onboardingDone = p[PrefKeys.onboardingDone] ?: false
         )
     }
@@ -89,6 +92,7 @@ class KeyboardPrefsRepository(private val context: Context) {
                 "fn" -> prefs[PrefKeys.fn] = value
                 "popups" -> prefs[PrefKeys.popups] = value
                 "autoCorrect" -> prefs[PrefKeys.autoCorrect] = value
+                "swipeTyping" -> prefs[PrefKeys.swipeTyping] = value
                 "onboardingDone" -> prefs[PrefKeys.onboardingDone] = value
             }
         }

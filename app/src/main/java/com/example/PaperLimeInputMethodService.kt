@@ -2,7 +2,13 @@ package com.example
 
 import android.annotation.SuppressLint
 import android.content.ClipboardManager
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
+import android.os.Build
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.util.Log
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
@@ -12,6 +18,7 @@ import android.view.View
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -35,11 +42,13 @@ import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
 import com.example.keyboard.PaperLimeKeyboardView
 import com.example.keyboard.ThemeChoice
+import com.example.keyboard.VoiceInput
 import com.example.keyboard.getPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class PaperLimeInputMethodService : InputMethodService(),
     LifecycleOwner,
@@ -75,6 +84,9 @@ class PaperLimeInputMethodService : InputMethodService(),
             }
         }.onFailure { Log.e(TAG, "clipboard capture failed", it) }
     }
+
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isListening = false
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -244,6 +256,10 @@ class PaperLimeInputMethodService : InputMethodService(),
                     lifecycleScope.launch { prefsRepository.setTheme(next) }
                     true
                 }
+                "voice" -> {
+                    startVoiceInput()
+                    true
+                }
                 else -> false
             }
         }.onFailure { Log.e(TAG, "keyboard action $actionId failed", it) }
@@ -325,7 +341,118 @@ class PaperLimeInputMethodService : InputMethodService(),
         }
     }
 
+    private fun startVoiceInput() {
+        if (isListening) {
+            stopVoiceInput()
+            return
+        }
+
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Log.w(TAG, "Speech recognition not available")
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val granted = ActivityCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                // The IME has no permission-request surface, so bounce to the app,
+                // which prompts for RECORD_AUDIO and returns the user here.
+                Log.w(TAG, "RECORD_AUDIO not granted; asking via MainActivity")
+                runCatching {
+                    startActivity(
+                        Intent(this, MainActivity::class.java)
+                            .putExtra(MainActivity.EXTRA_REQUEST_RECORD_AUDIO, true)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }.onFailure { Log.e(TAG, "record audio prompt failed", it) }
+                return
+            }
+        }
+
+        try {
+            speechRecognizer?.destroy()
+        } catch (_: Exception) {
+        }
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: android.os.Bundle?) {
+                isListening = true
+            }
+
+            override fun onBeginningOfSpeech() {}
+
+            override fun onRmsChanged(rmsdB: Float) {}
+
+            override fun onBufferReceived(buffer: ByteArray?) {}
+
+            override fun onEndOfSpeech() {
+                isListening = false
+            }
+
+            override fun onError(error: Int) {
+                isListening = false
+                Log.w(
+                    TAG,
+                    "speech error: ${VoiceInput.errorName(error)} ($error)" +
+                        if (VoiceInput.isActionableError(error)) " [actionable]" else ""
+                )
+            }
+
+            override fun onResults(results: android.os.Bundle?) {
+                isListening = false
+                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val text = VoiceInput.bestResult(matches) ?: return
+                runCatching {
+                    val ic = currentInputConnection
+                    if (ic != null) {
+                        ic.beginBatchEdit()
+                        ic.commitText(text, 1)
+                        ic.endBatchEdit()
+                    }
+                }.onFailure { Log.e(TAG, "commit voice text failed", it) }
+            }
+
+            override fun onPartialResults(partialResults: android.os.Bundle?) {}
+
+            override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+        })
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        try {
+            speechRecognizer?.startListening(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "startListening failed", e)
+            isListening = false
+        }
+    }
+
+    private fun stopVoiceInput() {
+        try {
+            speechRecognizer?.stopListening()
+            speechRecognizer?.cancel()
+        } catch (_: Exception) {
+        }
+        isListening = false
+    }
+
     override fun onFinishInputView(finishing: Boolean) {
+        stopVoiceInput()
+        try {
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+        } catch (_: Exception) {
+        }
         super.onFinishInputView(finishing)
         if (clipboardListenerRegistered) {
             runCatching {
@@ -347,6 +474,12 @@ class PaperLimeInputMethodService : InputMethodService(),
     }
 
     override fun onDestroy() {
+        stopVoiceInput()
+        try {
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+        } catch (_: Exception) {
+        }
         super.onDestroy()
         runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY) }
         store.clear()

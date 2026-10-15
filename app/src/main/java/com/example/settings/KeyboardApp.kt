@@ -12,9 +12,6 @@ private enum class AppScreen { Onboarding, Personalize, Settings }
 
 private val placeholderTitles = mapOf(
     "languages" to "Languages & layouts",
-    "swipe" to "Swipe typing",
-    "prediction" to "Text prediction",
-    "voice" to "Voice input",
     "clipboard" to "Clipboard",
     "emoji" to "Emoji & media",
     "actions" to "Actions",
@@ -23,8 +20,7 @@ private val placeholderTitles = mapOf(
     "privacy" to "Privacy",
     "premium" to "Premium",
     "other" to "Other",
-    "help" to "Help & feedback",
-    "about" to "About"
+    "help" to "Help & feedback"
 )
 
 @Composable
@@ -85,6 +81,11 @@ fun KeyboardApp(
 
                 "topbar" -> TopBarPage(prefs, repository) { page = null }
                 "typing" -> TypingPage(prefs, repository) { page = null }
+                "voice" -> VoicePage { page = null }
+                "prediction" -> PredictionPage(prefs, repository) { page = null }
+                "swipe" -> SwipePage(prefs, repository) { page = null }
+                "personalization" -> PersonalizationPage { page = null }
+                "about" -> AboutPage { page = null }
                 "appearance" -> PersonalizeScreen(
                     prefs = prefs,
                     repository = repository,

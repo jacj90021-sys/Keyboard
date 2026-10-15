@@ -34,7 +34,13 @@ import re
 import unittest
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+
+    HAVE_NUMPY = True
+except Exception:  # pragma: no cover
+    np = None
+    HAVE_NUMPY = False
 
 try:
     from tflite.BuiltinOperator import BuiltinOperator
@@ -45,7 +51,13 @@ try:
 except Exception:  # pragma: no cover - exercised only where the package is absent
     HAVE_TFLITE_SCHEMA = False
 
-import build_reranker_model as builder
+try:
+    import build_reranker_model as builder
+
+    HAVE_BUILDER = HAVE_NUMPY  # builder imports numpy
+except Exception:  # pragma: no cover
+    builder = None
+    HAVE_BUILDER = False
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = ROOT / "app" / "src" / "main" / "assets" / "reranker.tflite"
@@ -74,10 +86,12 @@ def parse_rust_constants() -> tuple[int, list[float]]:
 class FeatureContractTest(unittest.TestCase):
     """The Python training script must mirror the Rust feature vector exactly."""
 
+    @unittest.skipUnless(HAVE_BUILDER, "builder requires numpy")
     def test_feature_count_matches_the_rust_core(self):
         count, _ = parse_rust_constants()
         self.assertEqual(count, builder.FEATURE_COUNT)
 
+    @unittest.skipUnless(HAVE_BUILDER, "builder requires numpy")
     def test_fallback_weights_match_the_rust_core(self):
         _, weights = parse_rust_constants()
         self.assertEqual(len(weights), builder.FEATURE_COUNT)
@@ -89,7 +103,7 @@ class FeatureContractTest(unittest.TestCase):
             self.assertNotIn(constant, text, f"{constant} is a Python-only name")
 
 
-@unittest.skipUnless(HAVE_TFLITE_SCHEMA, "the tflite schema package is not installed")
+@unittest.skipUnless(HAVE_BUILDER and HAVE_NUMPY and HAVE_TFLITE_SCHEMA, "requires deps")
 class RerankerModelTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -210,8 +224,16 @@ class InterpreterAgreementTest(unittest.TestCase):
             self.skipTest("TensorFlow is not installed")
 
     def test_interpreter_matches_the_linear_scorer(self):
-        import tensorflow as tf
-        from tflite.Model import Model
+        if not HAVE_BUILDER:
+            self.skipTest("builder/numpy not installed")
+        try:
+            import tensorflow as tf
+        except Exception:
+            self.skipTest("TensorFlow is not installed")
+        try:
+            from tflite.Model import Model
+        except Exception:
+            self.skipTest("tflite schema not installed")
 
         interpreter = tf.lite.Interpreter(model_content=MODEL_PATH.read_bytes())
         interpreter.allocate_tensors()

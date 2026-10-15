@@ -166,8 +166,9 @@ fun PaperLimeKeyboardView(
     val toolbarVisible = prefs.toolbar && (!showChevron || isToolbarExpanded)
 
     // Gesture typing runs only on the live letter board, never in a preview, an
-    // overlay, or before the dictionary has loaded.
-    val swipeEnabled = !preview && engineReady && mode == KeyboardMode.QWERTY && overlay == OverlayView.NONE
+    // overlay, before the dictionary has loaded, or when the user turned it off.
+    val swipeEnabled = prefs.swipeTyping && !preview && engineReady &&
+        mode == KeyboardMode.QWERTY && overlay == OverlayView.NONE
     val swipeTyping = Modifier.swipeTyping(
         enabled = swipeEnabled,
         minTravelPx = with(density) { 24.dp.toPx() }

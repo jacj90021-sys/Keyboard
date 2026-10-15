@@ -1,9 +1,11 @@
 package com.example
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.os.Bundle
 import android.os.Handler
@@ -14,11 +16,13 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import android.app.AlertDialog
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
 import com.example.settings.KeyboardApp
@@ -34,6 +38,17 @@ class MainActivity : ComponentActivity() {
 
     private var imeObserver: ContentObserver? = null
 
+    /**
+     * The IME service cannot ask for a runtime permission itself (it is not an
+     * activity and has no permission-request surface). When the Voice Input card
+     * needs `RECORD_AUDIO` it relaunches this activity with [EXTRA_REQUEST_RECORD_AUDIO]
+     * and the dialog is shown here instead.
+     */
+    private val recordAudioPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            Log.i(TAG, "RECORD_AUDIO $granted")
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashReporter.install(applicationContext)
@@ -43,6 +58,8 @@ class MainActivity : ComponentActivity() {
         // Watch the secure settings for the WHOLE activity lifetime, not just while
         // resumed, so selecting the keyboard from the system picker is detected.
         registerImeObserver()
+
+        maybeRequestRecordAudio()
 
         setContent {
             val prefs by repository.prefs.collectAsState(initial = KeyboardPrefs())
@@ -181,6 +198,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Ask for `RECORD_AUDIO` when the Voice Input card bounced the user here.
+     * Harmless no-op on every other launch (and when already granted).
+     */
+    private fun maybeRequestRecordAudio() {
+        if (intent?.getBooleanExtra(EXTRA_REQUEST_RECORD_AUDIO, false) != true) return
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        runCatching { recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+            .onFailure { Log.e(TAG, "record audio request failed", it) }
+    }
+
     private fun refreshImeState() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
 
@@ -202,7 +234,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private companion object {
-        const val TAG = "MainActivity"
+    companion object {
+        private const val TAG = "MainActivity"
+
+        /** Intent extra the IME sets to trigger the `RECORD_AUDIO` prompt. */
+        const val EXTRA_REQUEST_RECORD_AUDIO = "com.example.extra.REQUEST_RECORD_AUDIO"
     }
 }
