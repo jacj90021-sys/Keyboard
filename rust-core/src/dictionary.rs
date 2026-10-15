@@ -25,6 +25,38 @@ pub struct MappedDictionary {
     entries: Vec<EntryIndex>,
 }
 
+static CONTEXT_TRANSITIONS: &[(&str, &str, u32)] = &[
+    ("the", "quick", 12),
+    ("quick", "brown", 10),
+    ("brown", "fox", 10),
+    ("jumped", "over", 8),
+    ("over", "the", 9),
+    ("i", "am", 11),
+    ("we", "are", 11),
+    ("you", "can", 10),
+    ("can", "use", 8),
+    ("this", "is", 11),
+    ("it", "is", 10),
+    ("please", "send", 7),
+    ("thank", "you", 12),
+    ("thanks", "again", 8),
+    ("hello", "world", 12),
+    ("good", "morning", 10),
+    ("good", "night", 9),
+    ("see", "you", 9),
+    ("come", "back", 8),
+    ("go", "away", 4),
+];
+
+fn context_boost(previous: &str, candidate: &str) -> u64 {
+    for (left, right, score) in CONTEXT_TRANSITIONS {
+        if *left == previous && *right == candidate {
+            return *score as u64;
+        }
+    }
+    0
+}
+
 impl MappedDictionary {
     pub fn load(path: &Path) -> Result<Self, DictionaryError> {
         // Validate and mmap the source file. Header parsing is deliberately simple
@@ -216,6 +248,33 @@ impl MappedDictionary {
                     .and_then(|value| std::str::from_utf8(value).ok())
                     .and_then(|text| text.trim().parse::<u64>().ok())
                     .unwrap_or(0);
+                (index, score)
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        candidates.into_iter().take(max).map(|(index, _)| index).collect()
+    }
+
+    pub fn top_prefixes_contextual(
+        &self,
+        prefix: &[u8],
+        previous: &str,
+        max: usize,
+    ) -> Vec<usize> {
+        let start = self.prefix_start(prefix);
+        let end = self.prefix_end(prefix);
+        let mut candidates: Vec<(usize, u64)> = (start..end)
+            .map(|index| {
+                let key = self.key_at(index).unwrap_or_default();
+                let text = String::from_utf8_lossy(key);
+                let exactness = if key == prefix { 20u64 } else { 0u64 };
+                let frequency = self
+                    .value_at(index)
+                    .and_then(|value| std::str::from_utf8(value).ok())
+                    .and_then(|value| value.trim().parse::<u64>().ok())
+                    .unwrap_or(0);
+                let score = frequency + exactness + context_boost(previous, &text);
                 (index, score)
             })
             .collect();

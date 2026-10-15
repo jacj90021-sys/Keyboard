@@ -42,9 +42,14 @@ fun PaperLimeKeyboardView(
     }
 
     var currentPrefix by remember { mutableStateOf("") }
-    val dictionaryCandidates = remember(currentPrefix) {
+    var lastCommittedWord by remember { mutableStateOf("") }
+    val dictionaryCandidates = remember(currentPrefix, lastCommittedWord) {
         if (currentPrefix.length >= 2 && NativeEngineBridge.isLoaded()) {
-            val prefixes = NativeEngineBridge.dictionaryTopPrefixes(currentPrefix, 4)
+            val prefixes = NativeEngineBridge.dictionaryTopPrefixesContextual(
+                currentPrefix,
+                lastCommittedWord,
+                4
+            )
             val corrections = if (prefixes.isEmpty()) {
                 NativeEngineBridge.dictionaryCorrections(currentPrefix, 4)
             } else {
@@ -57,7 +62,12 @@ fun PaperLimeKeyboardView(
     }
     val trackedCommit: (String) -> Unit = { text ->
         currentPrefix = when {
-            text == " " -> ""
+            text == " " -> {
+                if (currentPrefix.isNotBlank()) {
+                    lastCommittedWord = currentPrefix
+                }
+                ""
+            }
             text.length == 1 && text[0].isLetter() -> currentPrefix + text.lowercase()
             else -> ""
         }
