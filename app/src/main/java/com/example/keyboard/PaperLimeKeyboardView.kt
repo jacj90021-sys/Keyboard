@@ -41,6 +41,32 @@ fun PaperLimeKeyboardView(
         )
     }
 
+    var currentPrefix by remember { mutableStateOf("") }
+    val dictionaryCandidates = remember(currentPrefix) {
+        if (currentPrefix.length >= 2 && NativeEngineBridge.isLoaded()) {
+            val count = NativeEngineBridge.dictionaryPrefixCount(currentPrefix).coerceIn(0, 4)
+            (0 until count).mapNotNull { NativeEngineBridge.dictionaryPrefixKey(currentPrefix, it) }
+        } else {
+            emptyList()
+        }
+    }
+    val trackedCommit: (String) -> Unit = { text ->
+        currentPrefix = when {
+            text == " " -> ""
+            text.length == 1 && text[0].isLetter() -> currentPrefix + text.lowercase()
+            else -> ""
+        }
+        onCommitText(text)
+    }
+    val trackedDelete: () -> Unit = {
+        currentPrefix = if (currentPrefix.isNotEmpty()) currentPrefix.dropLast(1) else ""
+        onDelete()
+    }
+    val trackedEnter: () -> Unit = {
+        currentPrefix = ""
+        onEnter()
+    }
+
     val context = LocalContext.current
     LaunchedEffect(context) {
         NativeEngineBridge.tryLoad()
@@ -115,6 +141,7 @@ fun PaperLimeKeyboardView(
                 palette = palette,
                 isExpanded = isToolbarExpanded,
                 isFnMode = mode == KeyboardMode.FN || fnLongOverlay,
+                suggestionsOverride = if (mode == KeyboardMode.FN || fnLongOverlay) emptyList() else dictionaryCandidates,
                 showChevron = showChevron,
                 onToggleExpand = {
                     isToolbarExpanded = !isToolbarExpanded
@@ -137,7 +164,7 @@ fun PaperLimeKeyboardView(
                 NumberRowView(
                     palette = palette,
                     config = config,
-                    onKeyClick = { onCommitText(it) }
+                    onKeyClick = { trackedCommit(it) }
                 )
             }
         }
@@ -218,13 +245,13 @@ fun PaperLimeKeyboardView(
                                 config = config,
                                 shiftState = shiftState,
                                 onKeyClick = { char ->
-                                    onCommitText(char)
+                                    trackedCommit(char)
                                     if (shiftState == ShiftState.SHIFT) {
                                         shiftState = ShiftState.OFF
                                     }
                                 },
                                 onLongKeyClick = { num ->
-                                    onCommitText(num)
+                                    trackedCommit(num)
                                 },
                                 onShiftClick = {
                                     val now = System.currentTimeMillis()
@@ -235,7 +262,7 @@ fun PaperLimeKeyboardView(
                                     }
                                     lastShiftTapTime = now
                                 },
-                                onBackspaceClick = onDelete,
+                                onBackspaceClick = trackedDelete,
                                 onSymbolsClick = {
                                     fnLongOverlay = false
                                     overlay = OverlayView.NONE
@@ -247,8 +274,8 @@ fun PaperLimeKeyboardView(
                                 },
                                 onFnLongClick = { fnLongOverlay = !fnLongOverlay },
                                 isFnLongActive = fnLongOverlay,
-                                onSpaceClick = { onCommitText(" ") },
-                                onEnterClick = onEnter,
+                                onSpaceClick = { trackedCommit(" ") },
+                                onEnterClick = trackedEnter,
                                 onSpaceDrag = {}
                             )
                         }
@@ -258,7 +285,7 @@ fun PaperLimeKeyboardView(
                                 palette = palette,
                                 config = config,
                                 page = 1,
-                                onKeyClick = { onCommitText(it) },
+                                onKeyClick = { trackedCommit(it) },
                                 onSwitchPage = { mode = KeyboardMode.SYMBOLS_2 },
                                 onLettersClick = {
                                     fnLongOverlay = false
@@ -268,9 +295,9 @@ fun PaperLimeKeyboardView(
                                     fnLongOverlay = false
                                     mode = KeyboardMode.NUMPAD
                                 },
-                                onBackspaceClick = onDelete,
-                                onSpaceClick = { onCommitText(" ") },
-                                onEnterClick = onEnter
+                                onBackspaceClick = trackedDelete,
+                                onSpaceClick = { trackedCommit(" ") },
+                                onEnterClick = trackedEnter
                             )
                         }
 
@@ -279,7 +306,7 @@ fun PaperLimeKeyboardView(
                                 palette = palette,
                                 config = config,
                                 page = 2,
-                                onKeyClick = { onCommitText(it) },
+                                onKeyClick = { trackedCommit(it) },
                                 onSwitchPage = { mode = KeyboardMode.SYMBOLS_1 },
                                 onLettersClick = {
                                     fnLongOverlay = false
@@ -289,9 +316,9 @@ fun PaperLimeKeyboardView(
                                     fnLongOverlay = false
                                     mode = KeyboardMode.NUMPAD
                                 },
-                                onBackspaceClick = onDelete,
-                                onSpaceClick = { onCommitText(" ") },
-                                onEnterClick = onEnter
+                                onBackspaceClick = trackedDelete,
+                                onSpaceClick = { trackedCommit(" ") },
+                                onEnterClick = trackedEnter
                             )
                         }
 
@@ -299,13 +326,13 @@ fun PaperLimeKeyboardView(
                             NumpadLayoutView(
                                 palette = palette,
                                 config = config,
-                                onKeyClick = { onCommitText(it) },
+                                onKeyClick = { trackedCommit(it) },
                                 onLettersClick = {
                                     fnLongOverlay = false
                                     mode = KeyboardMode.QWERTY
                                 },
                                 onSymbolsClick = { mode = KeyboardMode.SYMBOLS_1 },
-                                onEnterClick = onEnter
+                                onEnterClick = trackedEnter
                             )
                         }
 
@@ -313,14 +340,14 @@ fun PaperLimeKeyboardView(
                             FnKeysLayoutView(
                                 palette = palette,
                                 config = config,
-                                onKeyClick = { f -> onCommitText("[$f]") },
+                                onKeyClick = { f -> currentPrefix = ""; onCommitText("[$f]") },
                                 onLettersClick = {
                                     fnLongOverlay = false
                                     mode = KeyboardMode.QWERTY
                                 },
-                                onBackspaceClick = onDelete,
-                                onSpaceClick = { onCommitText(" ") },
-                                onEnterClick = onEnter
+                                onBackspaceClick = trackedDelete,
+                                onSpaceClick = { trackedCommit(" ") },
+                                onEnterClick = trackedEnter
                             )
                         }
                     }

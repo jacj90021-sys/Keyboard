@@ -194,11 +194,16 @@ fun SuggestionsBar(
     isFnMode: Boolean,
     showChevron: Boolean,
     onToggleExpand: () -> Unit,
-    onSuggestionClick: (String) -> Unit
+    onSuggestionClick: (String) -> Unit,
+    suggestionsOverride: List<String> = emptyList()
 ) {
     val defaultSuggestions = remember { listOf("Yes", "Okay", "Thanks", "Awesome") }
     val fnSuggestions = remember { listOf("Esc", "Tab", "Ctrl", "Alt", "Home", "End") }
-    val suggestions = if (isFnMode) fnSuggestions else defaultSuggestions
+    val suggestions = when {
+        suggestionsOverride.isNotEmpty() -> suggestionsOverride
+        isFnMode -> fnSuggestions
+        else -> defaultSuggestions
+    }
 
     Row(
         modifier = Modifier
