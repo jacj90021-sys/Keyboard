@@ -842,4 +842,52 @@ mod tests {
         assert_eq!(context_boost(b"brown", b"sugar"), 0);
         assert_eq!(context_boost(b"", b""), 0);
     }
+
+    #[test]
+    fn handles_a_large_dictionary() {
+        // ~20k synthetic entries plus a few planted words, to exercise the
+        // binary-search paths at a scale far beyond the shipped asset.
+        let mut owned: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        for i in 0..20_000u32 {
+            owned.push((format!("word{i:05}").into_bytes(), b"1".to_vec()));
+        }
+        for word in ["zeal", "zebra", "zoom"] {
+            owned.push((word.as_bytes().to_vec(), b"7".to_vec()));
+        }
+        for i in 0..3u32 {
+            owned.push((format!("zzz{i:05}").into_bytes(), b"1".to_vec()));
+        }
+        owned.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let path = temp_path("large");
+        let refs: Vec<(&[u8], &[u8])> = owned
+            .iter()
+            .map(|(key, value)| (key.as_slice(), value.as_slice()))
+            .collect();
+        write_dictionary(&path, &refs);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        assert_eq!(dictionary.entry_count(), 20_006);
+        assert!(dictionary.exact_match(b"word15000").is_some());
+        assert!(dictionary.exact_match(b"word99999").is_none());
+
+        // Prefix ranges must stay exact at scale.
+        assert_eq!(dictionary.prefix_start(b"word0"), 0);
+        assert_eq!(dictionary.prefix_end(b"word0"), 10_000);
+        assert_eq!(dictionary.prefix_start(b"word15"), 15_000);
+        assert_eq!(dictionary.prefix_end(b"word15"), 16_000);
+
+        // Ties are broken by index, so the first match wins.
+        let top = dictionary.top_prefixes(b"word123", 3);
+        assert_eq!(top.first().copied(), Some(12_300));
+
+        // Corrections still work with tens of thousands of entries.
+        let corrections = dictionary.nearest_words(b"zebr", 4, 2);
+        let first = corrections
+            .first()
+            .and_then(|&index| dictionary.key_at(index));
+        assert_eq!(first, Some(b"zebra".as_slice()));
+
+        let _ = std::fs::remove_file(path);
+    }
 }
