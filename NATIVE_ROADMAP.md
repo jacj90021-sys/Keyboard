@@ -211,9 +211,10 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     `personalization` (learned words are already persisted) and `about` map onto
     real prefs/state; `languages` waits on a second dictionary; `emoji`/`premium`
     would be inventing features with no engine behind them.
-56. `[ ]` **Voice input.** The card and the settings row exist; there is no
-    recogniser wired up. Needs `RECORD_AUDIO` (a permission request surface) plus
-    a `SpeechRecognizer` lifecycle in the service.
+56. `[x]` **Voice input.** Added `RECORD_AUDIO` permission, permission request
+    surface via MainActivity, `SpeechRecognizer` lifecycle in the IME with
+    graceful degradation, testable VoiceInput helpers (7 unit tests), and a
+    real Voice settings page.
 57. `[x]` **Real clipboard history.** The overlay used to show three hard-coded
     demo clips. `ClipboardHistory` now keeps a bounded (24), newest-first,
     de-duplicated list — plain Kotlin with 9 unit tests — and the IME service
