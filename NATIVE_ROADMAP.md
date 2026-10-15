@@ -33,7 +33,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     when the native library is not present.
 12. `[x]` **Unified native suggest call** — one boundary call that merges
     prefix, context and correction results in Rust.
-13. `[ ]` **Case-preserving suggestions** — carry the user's capitalisation
+13. `[x]` **Case-preserving suggestions** — carry the user's capitalisation
     through to the suggestion chips.
 
 ## Constraints

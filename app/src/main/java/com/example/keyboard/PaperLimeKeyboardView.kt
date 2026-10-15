@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.keyboard.native.NativeEngineBridge
+import com.example.keyboard.native.SuggestionCase
 import com.example.keyboard.native.SuggestionPlanner
 
 @Composable
@@ -43,6 +44,7 @@ fun PaperLimeKeyboardView(
     }
 
     var currentPrefix by remember { mutableStateOf("") }
+    var rawPrefix by remember { mutableStateOf("") }
     var lastCommittedWord by remember { mutableStateOf("") }
     val dictionaryCandidates = remember(currentPrefix, lastCommittedWord) {
         SuggestionPlanner.candidates(
@@ -62,14 +64,21 @@ fun PaperLimeKeyboardView(
             text.length == 1 && text[0].isLetter() -> currentPrefix + text.lowercase()
             else -> ""
         }
+        rawPrefix = when {
+            text == " " -> ""
+            text.length == 1 && text[0].isLetter() -> rawPrefix + text
+            else -> ""
+        }
         onCommitText(text)
     }
     val trackedDelete: () -> Unit = {
         currentPrefix = if (currentPrefix.isNotEmpty()) currentPrefix.dropLast(1) else ""
+        rawPrefix = if (rawPrefix.isNotEmpty()) rawPrefix.dropLast(1) else ""
         onDelete()
     }
     val trackedEnter: () -> Unit = {
         currentPrefix = ""
+        rawPrefix = ""
         onEnter()
     }
 
@@ -158,7 +167,14 @@ fun PaperLimeKeyboardView(
                         if (word == "Tab") onCommitText("\t")
                         else onCommitText("[$word]")
                     } else {
-                        onCommitText("$word ")
+                        // Accepting a suggestion finishes the word: restore the
+                        // user's capitalisation and reset the typing state so the
+                        // next word starts clean (and next-word hints fire).
+                        val cased = SuggestionCase.apply(rawPrefix, word)
+                        lastCommittedWord = word.lowercase()
+                        currentPrefix = ""
+                        rawPrefix = ""
+                        onCommitText("$cased ")
                     }
                 }
             )
@@ -346,7 +362,7 @@ fun PaperLimeKeyboardView(
                             FnKeysLayoutView(
                                 palette = palette,
                                 config = config,
-                                onKeyClick = { f -> currentPrefix = ""; onCommitText("[$f]") },
+                                onKeyClick = { f -> currentPrefix = ""; rawPrefix = ""; onCommitText("[$f]") },
                                 onLettersClick = {
                                     fnLongOverlay = false
                                     mode = KeyboardMode.QWERTY
