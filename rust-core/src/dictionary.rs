@@ -207,6 +207,21 @@ fn frequency_value(raw: &[u8]) -> u64 {
         .unwrap_or(0)
 }
 
+/// Whether a close match is close enough to show as a *suggestion* correction.
+///
+/// Without this gate, a prefix with no real completions (say "zz") would be
+/// padded with unrelated short words that happen to sit within two edits. A
+/// one-edit match always reads as a typo fix; a two-edit match is only shown
+/// when it keeps the opening letter or the word is long enough that two edits
+/// is still credible.
+fn plausible_correction(prefix: &[u8], candidate: &[u8], distance: usize) -> bool {
+    if distance <= 1 {
+        return true;
+    }
+    let shares_first = prefix.first() == candidate.first();
+    shares_first || candidate.len() >= 5
+}
+
 /// Smallest possible on-disk size of one entry: 4-byte length header plus the
 /// required (non-empty) key. Used to bound `entry_count` before allocating.
 const MIN_ENTRY_BYTES: usize = 5;
@@ -700,9 +715,17 @@ impl MappedDictionary {
             let mut selected =
                 self.top_prefixes_contextual_ranked(prefix, previous, max, promotions);
             if selected.len() < max {
-                for index in self.nearest_words_ranked(prefix, max, 2, promotions) {
+                // Fill remaining slots with corrections, but only ones close
+                // enough to read as a typo fix rather than a random word.
+                for (index, distance, _) in self.ranked_close_matches(prefix, 2, promotions) {
                     if selected.len() >= max {
                         break;
+                    }
+                    let Some(key) = self.key_at(index) else {
+                        continue;
+                    };
+                    if !plausible_correction(prefix, key, distance) {
+                        continue;
                     }
                     if !selected.contains(&index) {
                         selected.push(index);
@@ -728,6 +751,22 @@ impl MappedDictionary {
         max_distance: usize,
         promotions: &PromotionTable,
     ) -> Vec<usize> {
+        self.ranked_close_matches(typo, max_distance, promotions)
+            .into_iter()
+            .take(max)
+            .map(|(index, _, _)| index)
+            .collect()
+    }
+
+    /// Close dictionary matches as `(entry index, edit distance, score)`, sorted
+    /// best-first: smallest distance, then highest score, then dictionary order.
+    /// Shared by the corrections API and by suggestion fill-in.
+    fn ranked_close_matches(
+        &self,
+        typo: &[u8],
+        max_distance: usize,
+        promotions: &PromotionTable,
+    ) -> Vec<(usize, usize, u64)> {
         let mut matches: Vec<(usize, usize, u64)> = self
             .automaton
             .fuzzy(typo, max_distance)
@@ -751,10 +790,6 @@ impl MappedDictionary {
                 .then_with(|| a.0.cmp(&b.0))
         });
         matches
-            .into_iter()
-            .take(max)
-            .map(|(index, _, _)| index)
-            .collect()
     }
 
     /// Decide the single best auto-replacement for a just-typed word, or `None`
@@ -989,6 +1024,40 @@ mod tests {
         let dictionary = MappedDictionary::load(&path).unwrap();
         // "the" is already dominant, so nothing should replace it.
         assert_eq!(dictionary.autocorrect(b"the"), None);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn correction_plausibility_gate() {
+        // One edit always reads as a typo fix.
+        assert!(plausible_correction(b"go", b"to", 1));
+        // Two edits are only shown when the opening letter survives...
+        assert!(plausible_correction(b"wor", b"we", 2));
+        // ...or the word is long enough that two edits is still credible.
+        assert!(plausible_correction(b"recieve", b"believe", 2));
+        // Unrelated short words must be rejected.
+        assert!(!plausible_correction(b"zz", b"be", 2));
+        assert!(!plausible_correction(b"hel", b"the", 2));
+    }
+
+    #[test]
+    fn suggest_does_not_pad_a_nonsense_prefix_with_distant_words() {
+        let path = temp_path("suggest-plausible");
+        write_dictionary(&path, &[(b"be", b"900"), (b"of", b"800"), (b"to", b"850")]);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        // Nothing starts with "zz", and no close match is plausible, so the
+        // suggestion list stays empty instead of echoing common short words.
+        assert!(dictionary.suggest(b"zz", "", 4).is_empty());
+
+        // A genuine one-edit typo is still offered; the two-edit "of" is not.
+        let hit = dictionary.suggest(b"bo", "", 4);
+        let words: Vec<&[u8]> = hit
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert!(words.contains(&b"be".as_slice()), "got {words:?}");
+        assert!(!words.contains(&b"of".as_slice()), "got {words:?}");
         let _ = std::fs::remove_file(path);
     }
 

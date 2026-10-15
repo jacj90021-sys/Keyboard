@@ -100,6 +100,19 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 38. `[x]` **Autocorrect tests** — 5 unit tests plus a shipped-dictionary
     integration test and a device assertion.
 
+## Phase 8 — suggestion quality
+
+39. `[x]` **Correction plausibility gate** — suggestion fill-in no longer pads an
+    empty result with unrelated short words (`zz` used to suggest
+    `be/to/of/a/in`). Two-edit matches now need a shared first letter or a
+    reasonably long word; one-edit matches always qualify.
+40. `[x]` **Shared close-match ranking** — extracted `ranked_close_matches` so the
+    corrections API and suggestion fill-in rank identically.
+41. `[x]` **Dictionary content** — added ~36 missing everyday words (including
+    `receive`, the target of the classic `recieve` typo); 310 → 346 entries.
+42. `[x]` **Diagnostic probe** — `rust-core/examples/suggest_probe.rs` prints live
+    suggestions/next-words/autocorrect for eyeballing.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

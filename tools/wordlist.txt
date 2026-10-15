@@ -313,3 +313,44 @@ hadn't 18
 aren't 26
 wasn't 28
 weren't 20
+
+# Common nouns and everyday words that were missing from the seed list. These
+# are frequent enough that their absence hurt suggestions and autocorrect
+# (notably "receive", the target of the classic "recieve" typo).
+better 210
+word 190
+life 170
+person 160
+place 160
+man 150
+money 150
+friend 130
+part 130
+job 130
+boy 130
+woman 130
+mother 120
+child 120
+hand 120
+girl 120
+father 110
+room 110
+team 110
+power 100
+story 100
+body 100
+different 95
+important 95
+week 90
+teacher 90
+student 90
+minute 80
+window 80
+screen 80
+month 75
+brother 70
+hour 70
+sister 65
+password 60
+receive 55
+

@@ -68,6 +68,7 @@ class NativeEngineInstrumentedTest {
             "a correctly spelled word must not be autocorrected",
             NativeEngineBridge.dictionaryAutocorrect("the") == null
         )
+        assertEquals("receive", NativeEngineBridge.dictionaryAutocorrect("recieve"))
 
         assertEquals(0, NativeEngineBridge.shutdownEngine())
     }

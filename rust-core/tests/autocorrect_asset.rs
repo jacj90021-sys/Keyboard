@@ -52,3 +52,21 @@ fn short_tokens_are_never_touched() {
     assert_eq!(correct(&dictionary, "te"), None);
     assert_eq!(correct(&dictionary, "a"), None);
 }
+
+#[test]
+fn classic_misspelling_reaches_the_right_word() {
+    let Some(dictionary) = shipped_dictionary() else {
+        return;
+    };
+    assert_eq!(correct(&dictionary, "recieve").as_deref(), Some("receive"));
+}
+
+#[test]
+fn a_nonsense_prefix_yields_no_suggestions() {
+    let Some(dictionary) = shipped_dictionary() else {
+        return;
+    };
+    // Nothing starts with "zz" and no close match is plausible, so the bar stays
+    // empty rather than being padded with unrelated common words.
+    assert!(dictionary.suggest(b"zz", "", 4).is_empty());
+}
