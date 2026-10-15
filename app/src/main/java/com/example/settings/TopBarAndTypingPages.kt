@@ -159,6 +159,13 @@ fun TypingPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack
             )
             Divider()
             SwitchRow(
+                title = "Autocorrect",
+                subtitle = "Fix obvious typos when you press space",
+                checked = prefs.autoCorrect,
+                onToggle = { scope.launch { repository.setBool("autoCorrect", !prefs.autoCorrect) } }
+            )
+            Divider()
+            SwitchRow(
                 title = "Special characters",
                 subtitle = "Extra symbols on keys",
                 checked = prefs.special,

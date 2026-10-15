@@ -26,6 +26,11 @@ fun PaperLimeKeyboardView(
     onCommitText: (String) -> Unit,
     onDelete: () -> Unit,
     onEnter: () -> Unit,
+    // Platform actions the view cannot perform itself (clipboard, cursor moves,
+    // undo/redo, hiding the keyboard, opening Settings, toggling a preference):
+    // the IME service owns the InputConnection, so it answers these. The default
+    // keeps previews and tests inert.
+    onAction: (String) -> Boolean = { false },
     modifier: Modifier = Modifier,
     // Previews (onboarding / appearance) keep the keyboard visual-only: the
     // toolbar "More" (three dots) must not replace the view with All Actions.
@@ -78,8 +83,15 @@ fun PaperLimeKeyboardView(
             text == " " -> {
                 if (currentPrefix.isNotBlank()) {
                     // Autocorrect on word commit: the engine decides whether the
-                    // typed word should be swapped for a likely correction.
-                    val correction = NativeEngineBridge.dictionaryAutocorrect(currentPrefix)
+                    // typed word should be swapped for a likely correction. The
+                    // user can turn this off from Settings or the AutoCorrect
+                    // action card.
+                    val correction =
+                        if (prefs.autoCorrect) {
+                            NativeEngineBridge.dictionaryAutocorrect(currentPrefix)
+                        } else {
+                            null
+                        }
                     if (correction != null && correction != currentPrefix) {
                         val typedLength =
                             if (rawPrefix.isNotEmpty()) rawPrefix.length else currentPrefix.length
@@ -270,33 +282,30 @@ fun PaperLimeKeyboardView(
                         onClose = { overlay = OverlayView.NONE },
                         onActionClick = { actionId ->
                             when (actionId) {
-                                // TODO(existing): these actions have no behaviour in the current keyboard.
-                                "language" -> {}
-                                "undo" -> onDelete()
-                                "redo" -> {}
-                                "select_all" -> {}
-                                "copy" -> {}
-                                "paste" -> {
-                                    if (clipboardList.isNotEmpty()) {
-                                        onCommitText(clipboardList.first())
+                                // View-local: opening an overlay or switching the
+                                // layout needs no text editor.
+                                "clipboard" -> overlay = OverlayView.CLIPBOARD
+                                "emojis" -> overlay = OverlayView.EMOJI
+                                "modes" -> {
+                                    mode = when (mode) {
+                                        KeyboardMode.QWERTY -> KeyboardMode.NUMPAD
+                                        KeyboardMode.NUMPAD -> KeyboardMode.FN
+                                        else -> KeyboardMode.QWERTY
                                     }
-                                }
-                                "theme" -> {} // Theming now lives in Settings; intentionally no-op here.
-                                "numpad" -> {
-                                    mode = KeyboardMode.NUMPAD
                                     overlay = OverlayView.NONE
                                 }
-                                "fn" -> {
-                                    mode = KeyboardMode.FN
+                                // There is exactly one shipped dictionary, so
+                                // there is nothing to switch to yet (roadmap
+                                // item 16); translate has no on-device backend.
+                                "language", "translate" -> overlay = OverlayView.NONE
+                                // Everything else runs against the platform text
+                                // editor, which the IME service owns: undo/redo,
+                                // clipboard, selection, arrows, word styles,
+                                // Settings, hide-keyboard, theme and autocorrect.
+                                else -> {
+                                    onAction(actionId)
                                     overlay = OverlayView.NONE
                                 }
-                                // TODO(existing): arrows, case, clear, voice, translate remain unimplemented.
-                                "arrow_left" -> {}
-                                "arrow_right" -> {}
-                                "case" -> {}
-                                "clear" -> {}
-                                "voice" -> {}
-                                "translate" -> {}
                             }
                         }
                     )

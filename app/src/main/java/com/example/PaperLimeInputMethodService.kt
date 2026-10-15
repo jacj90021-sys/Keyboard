@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.inputmethodservice.InputMethodService
 import android.util.Log
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
+import android.view.inputmethod.InputConnection
 import android.view.KeyEvent
 import android.view.View
 import androidx.compose.runtime.*
@@ -22,9 +24,15 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.compose.runtime.collectAsState
+import com.example.keyboard.ContextAction
+import com.example.keyboard.CursorMove
+import com.example.keyboard.EditorActions
+import com.example.keyboard.EditorConnection
+import com.example.keyboard.EditorSelection
 import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
 import com.example.keyboard.PaperLimeKeyboardView
+import com.example.keyboard.ThemeChoice
 import com.example.keyboard.getPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -142,7 +150,12 @@ class PaperLimeInputMethodService : InputMethodService(),
                                 ic.commitText("\n", 1)
                             }
                         }.onFailure { Log.e(TAG, "enter failed", it) }
-                    }
+                    },
+                    // The All Actions cards that need the platform text editor
+                    // (clipboard, cursor, undo/redo, selection, case styling) plus
+                    // the service-level actions (hide keyboard, Settings, theme
+                    // cycling, autocorrect toggle).
+                    onAction = { actionId -> performKeyboardAction(actionId) }
                 )
             }
         }
@@ -166,6 +179,103 @@ class PaperLimeInputMethodService : InputMethodService(),
     }
 
     override fun onEvaluateInputViewShown(): Boolean = true
+
+    /**
+     * Answer an All Actions card. Returns whether the action did something, so
+     * unknown ids stay inert instead of pretending to work.
+     */
+    private fun performKeyboardAction(actionId: String): Boolean {
+        if (EditorActions.handles(actionId)) {
+            return runCatching { EditorActions.perform(editorConnection, actionId) }
+                .onFailure { Log.e(TAG, "editor action $actionId failed", it) }
+                .getOrDefault(false)
+        }
+        return runCatching {
+            when (actionId) {
+                "hide_keyboard" -> {
+                    requestHideSelf(0)
+                    true
+                }
+                "settings" -> {
+                    startActivity(
+                        android.content.Intent(this, MainActivity::class.java)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    true
+                }
+                "auto_correct" -> {
+                    val next = !_prefs.value.autoCorrect
+                    lifecycleScope.launch { prefsRepository.setBool("autoCorrect", next) }
+                    true
+                }
+                "theme" -> {
+                    // Cycle the four shipped themes; the service already streams
+                    // the pref, so the palette recomposes immediately.
+                    val choices = ThemeChoice.entries
+                    val current = choices.indexOf(_prefs.value.theme)
+                    val next = choices[(current + 1).mod(choices.size)]
+                    lifecycleScope.launch { prefsRepository.setTheme(next) }
+                    true
+                }
+                else -> false
+            }
+        }.onFailure { Log.e(TAG, "keyboard action $actionId failed", it) }
+            .getOrDefault(false)
+    }
+
+    /**
+     * The one place that talks to the live `InputConnection` for editor actions.
+     * It is deliberately thin: all the decision-making lives in [EditorActions],
+     * which is unit tested off-device.
+     */
+    private val editorConnection = object : EditorConnection {
+        override fun commitText(text: String): Boolean =
+            currentInputConnection?.commitText(text, 1) ?: false
+
+        override fun deleteSurroundingText(before: Int, after: Int): Boolean =
+            currentInputConnection?.deleteSurroundingText(before, after) ?: false
+
+        override fun performContextAction(action: ContextAction): Boolean {
+            val id = when (action) {
+                ContextAction.UNDO -> android.R.id.undo
+                ContextAction.REDO -> android.R.id.redo
+                ContextAction.CUT -> android.R.id.cut
+                ContextAction.COPY -> android.R.id.copy
+                ContextAction.PASTE -> android.R.id.paste
+                ContextAction.SELECT_ALL -> android.R.id.selectAll
+            }
+            return currentInputConnection?.performContextMenuAction(id) ?: false
+        }
+
+        override fun sendCursorMove(move: CursorMove): Boolean {
+            val keyCode = when (move) {
+                CursorMove.LEFT -> KeyEvent.KEYCODE_DPAD_LEFT
+                CursorMove.RIGHT -> KeyEvent.KEYCODE_DPAD_RIGHT
+                CursorMove.UP -> KeyEvent.KEYCODE_DPAD_UP
+                CursorMove.DOWN -> KeyEvent.KEYCODE_DPAD_DOWN
+            }
+            // sendDownUpKeyEvents is the IME-level path editors expect for cursor
+            // movement; fall back to a raw key event when no connection exists.
+            val ic: InputConnection? = currentInputConnection
+            if (ic == null) return false
+            runCatching { sendDownUpKeyEvents(keyCode) }
+            return true
+        }
+
+        override fun setSelection(start: Int, end: Int): Boolean =
+            currentInputConnection?.setSelection(start, end) ?: false
+
+        override fun selection(): EditorSelection? {
+            val ic = currentInputConnection ?: return null
+            val extracted = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return null
+            val text = extracted.text?.toString() ?: return null
+            if (extracted.selectionStart < 0 || extracted.selectionEnd < 0) return null
+            return EditorSelection(text, extracted.selectionStart, extracted.selectionEnd)
+        }
+
+        override fun textBeforeCursor(maxChars: Int): String? =
+            currentInputConnection?.getTextBeforeCursor(maxChars, 0)?.toString()
+    }
 
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         super.onStartInput(info, restarting)

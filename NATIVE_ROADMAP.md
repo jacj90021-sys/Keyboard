@@ -184,6 +184,42 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     0.2 µs, typo scan 0.73 ms — i.e. the 46k-word vocabulary costs nothing on
     the keystroke paths.
 
+## Phase 11 — the All Actions grid actually does something
+
+52. `[x]` **Editor actions, testable off-device.** New `EditorActions.kt` defines a
+    tiny `EditorConnection` interface and dispatches the editing cards onto it:
+    copy/cut/paste/select-all and undo/redo through the platform context-menu
+    actions, the four cursor arrows, word-case cycling (lowercase → Titlecase →
+    UPPERCASE, erased and retyped so multi-byte words survive), and word
+    selection. All the decision-making is plain Kotlin with 14 JVM unit tests;
+    the IME service is the only place that touches `InputConnection`.
+53. `[x]` **Every card is wired.** The grid emitted 22 action ids but the handler
+    matched a *different* set, so `cut`, `arrow_up`, `arrow_down`,
+    `hide_keyboard`, `modes`, `emojis`, `clipboard`, `settings`, `text_editor`,
+    `word_styles` and `auto_correct` were silently inert — and `undo` was wrongly
+    wired to backspace. All 22 now do something: overlays and the layout switch
+    stay view-local, everything else goes through one `onAction` callback the
+    service answers (`modes` cycles QWERTY → NUMPAD → FN, `theme` cycles the four
+    shipped themes, `hide_keyboard`/`settings` are service calls). The default
+    keeps previews and tests inert.
+54. `[x]` **Autocorrect is a preference.** Autocorrect had no off switch at all:
+    it is now an `autoCorrect` DataStore pref (default on) with a switch on the
+    "Keyboard & typing" page and an All Actions card, and the space-commit path
+    consults it live.
+55. `[ ]` **The remaining settings pages.** 14 of the 17 settings rows still route
+    to `PlaceholderPage`. The honest split: `prediction`, `swipe`, `sound`,
+    `personalization` (learned words are already persisted) and `about` map onto
+    real prefs/state; `languages` waits on a second dictionary; `emoji`/`premium`
+    would be inventing features with no engine behind them.
+56. `[ ]` **Voice input.** The card and the settings row exist; there is no
+    recogniser wired up. Needs `RECORD_AUDIO` (a permission request surface) plus
+    a `SpeechRecognizer` lifecycle in the service.
+57. `[ ]` **Real clipboard history.** The clipboard overlay still shows three
+    hard-coded sample clips; the grid's Paste card does work (it performs the
+    platform paste), but there is no captured history yet. Requires a
+    `ClipboardManager.OnPrimaryClipChangedListener` in the service feeding a
+    bounded list to the view.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.
