@@ -5,11 +5,6 @@ const MAGIC: &[u8; 4] = b"PLKD";
 const VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy)]
-pub struct DictionaryHeader {
-    pub entry_count: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct EntryIndex {
     pub key_offset: usize,
     pub key_len: usize,
@@ -273,9 +268,6 @@ fn levenshtein_distance(left: &[u8], right: &[u8]) -> usize {
             let substitution = previous[j] + usize::from(left_byte != right_byte);
             current[j + 1] = deletion.min(insertion).min(substitution);
             minimum = minimum.min(current[j + 1]);
-        }
-        if minimum > right.len().saturating_add(1) {
-            // Early exit for clearly unrelated lengths.
         }
         std::mem::swap(&mut previous, &mut current);
     }
