@@ -64,6 +64,15 @@ object NativeEngineBridge {
     ): String?
 
     @JvmStatic
+    private external fun rustDictionaryPromote(word: String): Int
+
+    @JvmStatic
+    private external fun rustDictionaryClearPromotions(): Int
+
+    @JvmStatic
+    private external fun rustDictionaryPromotionCount(): Int
+
+    @JvmStatic
     private external fun rustDictionaryCorrections(typo: String, maxCount: Int): String?
 
     private var loaded = false
@@ -136,6 +145,19 @@ object NativeEngineBridge {
         val raw = safeCallNullable { rustDictionarySuggest(prefix, previous, maxCount) }
         return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
     }
+
+    /**
+     * Record that the user chose or typed [word], so the engine can rank it
+     * higher next time. Learning is session-scoped and best-effort.
+     */
+    fun dictionaryPromote(word: String): Int =
+        if (loaded && word.isNotBlank()) safeCall { rustDictionaryPromote(word) } else -1
+
+    fun dictionaryClearPromotions(): Int =
+        if (loaded) safeCall { rustDictionaryClearPromotions() } else -1
+
+    fun dictionaryPromotionCount(): Int =
+        if (loaded) safeCall { rustDictionaryPromotionCount() } else 0
 
     fun loadSampleDictionary(context: Context): Int {
         if (!loaded) tryLoad()

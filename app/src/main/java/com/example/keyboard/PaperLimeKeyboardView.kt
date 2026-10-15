@@ -58,6 +58,10 @@ fun PaperLimeKeyboardView(
             text == " " -> {
                 if (currentPrefix.isNotBlank()) {
                     lastCommittedWord = currentPrefix
+                    // Learn correctly typed words (only if they are real entries).
+                    if (NativeEngineBridge.dictionaryExactValue(currentPrefix) != null) {
+                        NativeEngineBridge.dictionaryPromote(currentPrefix)
+                    }
                 }
                 ""
             }
@@ -171,6 +175,7 @@ fun PaperLimeKeyboardView(
                         // user's capitalisation and reset the typing state so the
                         // next word starts clean (and next-word hints fire).
                         val cased = SuggestionCase.apply(rawPrefix, word)
+                        NativeEngineBridge.dictionaryPromote(word.lowercase())
                         lastCommittedWord = word.lowercase()
                         currentPrefix = ""
                         rawPrefix = ""

@@ -36,6 +36,14 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 13. `[x]` **Case-preserving suggestions** — carry the user's capitalisation
     through to the suggestion chips.
 
+## Phase 3
+
+14. `[x]` **Session learning** — promote accepted suggestions and correctly
+    typed words so ranking adapts during a session.
+15. `[ ]` **Persist learned words** across restarts (bounded, private storage).
+16. `[ ]` **Locale/language switch** hook for multiple dictionaries.
+17. `[ ]` **Rust integration test** exercising the public API from `tests/`.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

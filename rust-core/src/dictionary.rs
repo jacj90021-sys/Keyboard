@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::path::Path;
 
@@ -207,6 +208,52 @@ fn frequency_value(raw: &[u8]) -> u64 {
 /// required (non-empty) key. Used to bound `entry_count` before allocating.
 const MIN_ENTRY_BYTES: usize = 5;
 
+/// Upper bound on an individual word's accumulated promotion so a pathological
+/// stream of taps cannot overflow or completely dominate frequency scores.
+const MAX_PROMOTION: u64 = 1_000_000;
+
+/// Runtime word preferences learned from the user: accepted suggestions and
+/// correctly typed words. Kept separate from the immutable mapped dictionary so
+/// it can change without re-mapping, and so ranking stays deterministic and
+/// independently testable when no table is supplied.
+#[derive(Debug, Default)]
+pub struct PromotionTable {
+    boosts: HashMap<Vec<u8>, u64>,
+}
+
+impl PromotionTable {
+    pub fn new() -> Self {
+        Self {
+            boosts: HashMap::new(),
+        }
+    }
+
+    /// Increase a word's rank by `step`, saturating at [`MAX_PROMOTION`].
+    pub fn promote(&mut self, word: &[u8], step: u64) {
+        if word.is_empty() || step == 0 {
+            return;
+        }
+        let entry = self.boosts.entry(word.to_vec()).or_insert(0);
+        *entry = entry.saturating_add(step).min(MAX_PROMOTION);
+    }
+
+    pub fn boost(&self, word: &[u8]) -> u64 {
+        self.boosts.get(word).copied().unwrap_or(0)
+    }
+
+    pub fn clear(&mut self) {
+        self.boosts.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.boosts.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.boosts.is_empty()
+    }
+}
+
 impl MappedDictionary {
     pub fn load(path: &Path) -> Result<Self, DictionaryError> {
         // Validate and mmap the source file. Header parsing is deliberately simple
@@ -406,11 +453,21 @@ impl MappedDictionary {
     }
 
     pub fn top_prefixes(&self, prefix: &[u8], max: usize) -> Vec<usize> {
+        self.top_prefixes_ranked(prefix, max, &PromotionTable::new())
+    }
+
+    pub fn top_prefixes_ranked(
+        &self,
+        prefix: &[u8],
+        max: usize,
+        promotions: &PromotionTable,
+    ) -> Vec<usize> {
         let start = self.prefix_start(prefix);
         let end = self.prefix_end(prefix);
         let mut candidates: Vec<(usize, u64)> = (start..end)
             .map(|index| {
-                let score = self.frequency_at(index);
+                let key = self.key_at(index).unwrap_or_default();
+                let score = self.frequency_at(index) + promotions.boost(key);
                 (index, score)
             })
             .collect();
@@ -425,6 +482,16 @@ impl MappedDictionary {
         previous: &str,
         max: usize,
     ) -> Vec<usize> {
+        self.top_prefixes_contextual_ranked(prefix, previous, max, &PromotionTable::new())
+    }
+
+    pub fn top_prefixes_contextual_ranked(
+        &self,
+        prefix: &[u8],
+        previous: &str,
+        max: usize,
+        promotions: &PromotionTable,
+    ) -> Vec<usize> {
         let start = self.prefix_start(prefix);
         let end = self.prefix_end(prefix);
         let mut candidates: Vec<(usize, u64)> = (start..end)
@@ -432,7 +499,10 @@ impl MappedDictionary {
                 let key = self.key_at(index).unwrap_or_default();
                 let exactness = if key == prefix { 20u64 } else { 0u64 };
                 let frequency = self.frequency_at(index);
-                let score = frequency + exactness + context_boost(previous.as_bytes(), key);
+                let score = frequency
+                    + exactness
+                    + context_boost(previous.as_bytes(), key)
+                    + promotions.boost(key);
                 (index, score)
             })
             .collect();
@@ -442,6 +512,15 @@ impl MappedDictionary {
     }
 
     pub fn top_next_words(&self, previous: &str, max: usize) -> Vec<usize> {
+        self.top_next_words_ranked(previous, max, &PromotionTable::new())
+    }
+
+    pub fn top_next_words_ranked(
+        &self,
+        previous: &str,
+        max: usize,
+        promotions: &PromotionTable,
+    ) -> Vec<usize> {
         let previous_bytes = previous.as_bytes();
         // Rank by context first, then frequency. A transition hit should beat a
         // merely common word, otherwise next-word hints would just echo the most
@@ -450,7 +529,7 @@ impl MappedDictionary {
             .map(|index| {
                 let key = self.key_at(index).unwrap_or_default();
                 let boost = context_boost(previous_bytes, key);
-                let frequency = self.frequency_at(index);
+                let frequency = self.frequency_at(index) + promotions.boost(key);
                 (index, boost, frequency)
             })
             .collect();
@@ -475,14 +554,25 @@ impl MappedDictionary {
     /// This keeps the whole ranking policy in one place (here) instead of
     /// splitting it across the Kotlin layer.
     pub fn suggest(&self, prefix: &[u8], previous: &str, max: usize) -> Vec<usize> {
+        self.suggest_ranked(prefix, previous, max, &PromotionTable::new())
+    }
+
+    pub fn suggest_ranked(
+        &self,
+        prefix: &[u8],
+        previous: &str,
+        max: usize,
+        promotions: &PromotionTable,
+    ) -> Vec<usize> {
         if max == 0 {
             return Vec::new();
         }
 
         if prefix.len() >= 2 {
-            let mut selected = self.top_prefixes_contextual(prefix, previous, max);
+            let mut selected =
+                self.top_prefixes_contextual_ranked(prefix, previous, max, promotions);
             if selected.len() < max {
-                for index in self.nearest_words(prefix, max, 2) {
+                for index in self.nearest_words_ranked(prefix, max, 2, promotions) {
                     if selected.len() >= max {
                         break;
                     }
@@ -493,13 +583,23 @@ impl MappedDictionary {
             }
             selected
         } else if !previous.is_empty() {
-            self.top_next_words(previous, max)
+            self.top_next_words_ranked(previous, max, promotions)
         } else {
             Vec::new()
         }
     }
 
     pub fn nearest_words(&self, typo: &[u8], max: usize, max_distance: usize) -> Vec<usize> {
+        self.nearest_words_ranked(typo, max, max_distance, &PromotionTable::new())
+    }
+
+    pub fn nearest_words_ranked(
+        &self,
+        typo: &[u8],
+        max: usize,
+        max_distance: usize,
+        promotions: &PromotionTable,
+    ) -> Vec<usize> {
         let mut matches: Vec<(usize, usize, u64)> = (0..self.entry_count())
             .filter_map(|index| {
                 let key = self.key_at(index)?;
@@ -510,7 +610,11 @@ impl MappedDictionary {
                 if distance == 0 || distance > max_distance {
                     return None;
                 }
-                Some((index, distance, self.frequency_at(index)))
+                Some((
+                    index,
+                    distance,
+                    self.frequency_at(index) + promotions.boost(key),
+                ))
             })
             .collect();
 
@@ -527,6 +631,7 @@ impl MappedDictionary {
             .map(|(index, _, _)| index)
             .collect()
     }
+
 }
 
 fn levenshtein_distance(left: &[u8], right: &[u8]) -> usize {
@@ -993,6 +1098,68 @@ mod tests {
         assert!(dictionary.suggest(b"", "", 4).is_empty());
         assert!(dictionary.suggest(b"h", "", 4).is_empty());
         assert!(dictionary.suggest(b"hel", "", 0).is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn promotion_reranks_prefix_candidates() {
+        let path = temp_path("promote-prefix");
+        write_dictionary(&path, &[(b"moon", b"100"), (b"morning", b"1")]);
+        let dictionary = MappedDictionary::load(&path).unwrap();
+
+        let mut promotions = PromotionTable::new();
+        let base = dictionary.top_prefixes_ranked(b"mo", 2, &promotions);
+        assert_eq!(dictionary.key_at(base[0]).unwrap(), b"moon");
+
+        promotions.promote(b"morning", 500);
+        let ranked = dictionary.top_prefixes_ranked(b"mo", 2, &promotions);
+        assert_eq!(dictionary.key_at(ranked[0]).unwrap(), b"morning");
+
+        promotions.clear();
+        assert!(promotions.is_empty());
+        let cleared = dictionary.top_prefixes_ranked(b"mo", 2, &promotions);
+        assert_eq!(dictionary.key_at(cleared[0]).unwrap(), b"moon");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn promotion_is_capped_and_ignores_empty_words() {
+        let mut promotions = PromotionTable::new();
+        for _ in 0..1000 {
+            promotions.promote(b"word", u64::MAX);
+        }
+        assert_eq!(promotions.boost(b"word"), MAX_PROMOTION);
+        promotions.promote(b"", 10);
+        assert_eq!(promotions.len(), 1);
+        assert_eq!(promotions.boost(b"absent"), 0);
+    }
+
+    #[test]
+    fn promotion_boosts_corrections() {
+        let path = temp_path("promote-correction");
+        write_dictionary(&path, &[(b"care", b"1"), (b"cash", b"1")]);
+        let dictionary = MappedDictionary::load(&path).unwrap();
+
+        let mut promotions = PromotionTable::new();
+        let base = dictionary.nearest_words_ranked(b"cahd", 2, 2, &promotions);
+        assert_eq!(dictionary.key_at(base[0]).unwrap(), b"care");
+
+        promotions.promote(b"cash", 100);
+        let ranked = dictionary.nearest_words_ranked(b"cahd", 2, 2, &promotions);
+        assert_eq!(dictionary.key_at(ranked[0]).unwrap(), b"cash");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn promotion_influences_next_words() {
+        let path = temp_path("promote-next");
+        write_dictionary(&path, &[(b"moon", b"1000"), (b"morning", b"1")]);
+        let dictionary = MappedDictionary::load(&path).unwrap();
+
+        let mut promotions = PromotionTable::new();
+        promotions.promote(b"moon", 50);
+        let next = dictionary.top_next_words_ranked("unrelated", 2, &promotions);
+        assert_eq!(dictionary.key_at(next[0]).unwrap(), b"moon");
         let _ = std::fs::remove_file(path);
     }
 }

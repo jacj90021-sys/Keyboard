@@ -44,6 +44,12 @@ class NativeEngineInstrumentedTest {
         val fused = NativeEngineBridge.dictionarySuggest("th", "", 4)
         assertTrue("expected fused suggestions for 'th'", fused.isNotEmpty())
 
+        // Learning path: promoting a word must be accepted and counted.
+        assertEquals(0, NativeEngineBridge.dictionaryPromote("hello"))
+        assertEquals(1, NativeEngineBridge.dictionaryPromotionCount())
+        assertEquals(0, NativeEngineBridge.dictionaryClearPromotions())
+        assertEquals(0, NativeEngineBridge.dictionaryPromotionCount())
+
         assertEquals(0, NativeEngineBridge.shutdownEngine())
     }
 }

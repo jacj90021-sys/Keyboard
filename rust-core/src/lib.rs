@@ -4,7 +4,7 @@
 //! and cross-compilation before importing any higher-level algorithms.
 
 mod dictionary;
-pub use dictionary::{MappedDictionary, DictionaryError};
+pub use dictionary::{DictionaryError, MappedDictionary, PromotionTable};
 
 // Transparency: FFI boundary requires explicitly scoped unsafe attributes/blocks.
 
@@ -108,6 +108,61 @@ use std::path::Path;
 use std::sync::Mutex;
 
 static DICTIONARY: Mutex<Option<MappedDictionary>> = Mutex::new(None);
+
+/// Increment applied to a word each time the user accepts or types it.
+const PROMOTION_STEP: u64 = 100;
+
+/// Runtime learning table. `PromotionTable` is not `const`-constructible
+/// (it owns a `HashMap`), so it is initialised lazily.
+static PROMOTIONS: std::sync::LazyLock<Mutex<PromotionTable>> =
+    std::sync::LazyLock::new(|| Mutex::new(PromotionTable::new()));
+
+/// Pack suggestion indices into one Unit-Separator-joined string.
+fn pack_indices(
+    env: &mut JNIEnv,
+    dictionary: &MappedDictionary,
+    indices: &[usize],
+) -> jni::sys::jstring {
+    let mut output = String::new();
+    let mut first = true;
+    for &index in indices {
+        if let Some(key) = dictionary.key_at(index) {
+            if !first {
+                output.push('\u{001f}');
+            }
+            first = false;
+            output.push_str(&String::from_utf8_lossy(key));
+        }
+    }
+    match env.new_string(output) {
+        Ok(result) => result.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Run a ranked query against the mapped dictionary plus the promotion table.
+///
+/// Lock order is always promotions first, then dictionary, so concurrent
+/// callers can never deadlock.
+fn engine_query(
+    env: &mut JNIEnv,
+    query: impl FnOnce(&MappedDictionary, &PromotionTable) -> Vec<usize>,
+) -> jni::sys::jstring {
+    let promotions = match PROMOTIONS.lock() {
+        Ok(guard) => guard,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let dictionary = match DICTIONARY.lock() {
+        Ok(guard) => guard,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let dictionary = match dictionary.as_ref() {
+        Some(dictionary) => dictionary,
+        None => return std::ptr::null_mut(),
+    };
+    let indices = query(dictionary, &promotions);
+    pack_indices(env, dictionary, &indices)
+}
 
 #[no_mangle]
 pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustLoadDictionary(
@@ -394,28 +449,54 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
     };
 
     let max = if max_count <= 0 { 4usize } else { max_count as usize };
-    let mut output = String::new();
+    engine_query(&mut env, |dictionary, promotions| {
+        dictionary.suggest_ranked(requested.as_bytes(), &prior, max, promotions)
+    })
+}
 
-    if let Ok(guard) = DICTIONARY.lock() {
-        if let Some(dictionary) = guard.as_ref() {
-            let mut first = true;
-            for index in dictionary.suggest(requested.as_bytes(), &prior, max) {
-                if let Some(key) = dictionary.key_at(index) {
-                    let text = String::from_utf8_lossy(key);
-                    if !first {
-                        output.push('\u{001f}');
-                    }
-                    first = false;
-                    output.push_str(&text);
-                }
-            }
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryPromote(
+    mut env: JNIEnv,
+    _class: JClass,
+    word: JString,
+) -> jint {
+    let requested: String = match env.get_string(&word) {
+        Ok(value) => value.into(),
+        Err(_) => return -1,
+    };
+    match PROMOTIONS.lock() {
+        Ok(mut guard) => {
+            guard.promote(requested.as_bytes(), PROMOTION_STEP);
+            0
         }
+        Err(_) => -3,
     }
+}
 
-    match env.new_string(output) {
-        Ok(result) => result.into_raw(),
-        Err(_) => std::ptr::null_mut(),
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryClearPromotions(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    match PROMOTIONS.lock() {
+        Ok(mut guard) => {
+            guard.clear();
+            0
+        }
+        Err(_) => -3,
     }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryPromotionCount(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    PROMOTIONS
+        .lock()
+        .map(|guard| guard.len() as i32)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
