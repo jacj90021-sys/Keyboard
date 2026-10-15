@@ -45,17 +45,11 @@ fun PaperLimeKeyboardView(
     var currentPrefix by remember { mutableStateOf("") }
     var lastCommittedWord by remember { mutableStateOf("") }
     val dictionaryCandidates = remember(currentPrefix, lastCommittedWord) {
-        if (!NativeEngineBridge.isLoaded()) {
-            emptyList()
-        } else {
-            SuggestionPlanner.candidates(
-                prefix = currentPrefix,
-                previousWord = lastCommittedWord,
-                topPrefixesContextual = NativeEngineBridge::dictionaryTopPrefixesContextual,
-                corrections = NativeEngineBridge::dictionaryCorrections,
-                nextWords = NativeEngineBridge::dictionaryTopNextWords
-            )
-        }
+        SuggestionPlanner.candidates(
+            prefix = currentPrefix,
+            previousWord = lastCommittedWord,
+            suggest = NativeEngineBridge::dictionarySuggest
+        )
     }
     val trackedCommit: (String) -> Unit = { text ->
         currentPrefix = when {

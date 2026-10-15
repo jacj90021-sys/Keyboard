@@ -375,6 +375,49 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
     }
 }
 
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionarySuggest(
+    mut env: JNIEnv,
+    _class: JClass,
+    prefix: JString,
+    previous: JString,
+    max_count: jint,
+) -> jni::sys::jstring {
+    let requested: String = match env.get_string(&prefix) {
+        Ok(value) => value.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let prior: String = match env.get_string(&previous) {
+        Ok(value) => value.into(),
+        Err(_) => String::new(),
+    };
+
+    let max = if max_count <= 0 { 4usize } else { max_count as usize };
+    let mut output = String::new();
+
+    if let Ok(guard) = DICTIONARY.lock() {
+        if let Some(dictionary) = guard.as_ref() {
+            let mut first = true;
+            for index in dictionary.suggest(requested.as_bytes(), &prior, max) {
+                if let Some(key) = dictionary.key_at(index) {
+                    let text = String::from_utf8_lossy(key);
+                    if !first {
+                        output.push('\u{001f}');
+                    }
+                    first = false;
+                    output.push_str(&text);
+                }
+            }
+        }
+    }
+
+    match env.new_string(output) {
+        Ok(result) => result.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -57,6 +57,13 @@ object NativeEngineBridge {
     ): String?
 
     @JvmStatic
+    private external fun rustDictionarySuggest(
+        prefix: String,
+        previous: String,
+        maxCount: Int
+    ): String?
+
+    @JvmStatic
     private external fun rustDictionaryCorrections(typo: String, maxCount: Int): String?
 
     private var loaded = false
@@ -117,6 +124,16 @@ object NativeEngineBridge {
     fun dictionaryCorrections(typo: String, maxCount: Int): List<String> {
         if (!loaded) return emptyList()
         val raw = safeCallNullable { rustDictionaryCorrections(typo, maxCount) }
+        return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
+    }
+
+    /**
+     * Fused suggestion query. Ranking (prefix vs. correction vs. next-word) is
+     * done inside the native engine; this is the single call the UI needs.
+     */
+    fun dictionarySuggest(prefix: String, previous: String, maxCount: Int): List<String> {
+        if (!loaded) return emptyList()
+        val raw = safeCallNullable { rustDictionarySuggest(prefix, previous, maxCount) }
         return raw?.split("\u001f")?.filter { it.isNotBlank() } ?: emptyList()
     }
 

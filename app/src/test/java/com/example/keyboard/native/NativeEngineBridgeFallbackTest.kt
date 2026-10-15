@@ -42,6 +42,7 @@ class NativeEngineBridgeFallbackTest {
         assertTrue(NativeEngineBridge.dictionaryTopPrefixesContextual("th", "", 4).isEmpty())
         assertTrue(NativeEngineBridge.dictionaryTopNextWords("good", 4).isEmpty())
         assertTrue(NativeEngineBridge.dictionaryCorrections("teh", 4).isEmpty())
+        assertTrue(NativeEngineBridge.dictionarySuggest("th", "", 4).isEmpty())
     }
 
     @Test

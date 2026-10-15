@@ -467,6 +467,38 @@ impl MappedDictionary {
             .collect()
     }
 
+    /// Fused suggestion query used by the Android boundary.
+    ///
+    /// While a word of at least two characters is being typed, prefix matches
+    /// rank first and spelling corrections fill any remaining slots. With an
+    /// empty prefix after a committed word, likely next words are returned.
+    /// This keeps the whole ranking policy in one place (here) instead of
+    /// splitting it across the Kotlin layer.
+    pub fn suggest(&self, prefix: &[u8], previous: &str, max: usize) -> Vec<usize> {
+        if max == 0 {
+            return Vec::new();
+        }
+
+        if prefix.len() >= 2 {
+            let mut selected = self.top_prefixes_contextual(prefix, previous, max);
+            if selected.len() < max {
+                for index in self.nearest_words(prefix, max, 2) {
+                    if selected.len() >= max {
+                        break;
+                    }
+                    if !selected.contains(&index) {
+                        selected.push(index);
+                    }
+                }
+            }
+            selected
+        } else if !previous.is_empty() {
+            self.top_next_words(previous, max)
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn nearest_words(&self, typo: &[u8], max: usize, max_distance: usize) -> Vec<usize> {
         let mut matches: Vec<(usize, usize, u64)> = (0..self.entry_count())
             .filter_map(|index| {
@@ -888,6 +920,79 @@ mod tests {
             .and_then(|&index| dictionary.key_at(index));
         assert_eq!(first, Some(b"zebra".as_slice()));
 
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn suggest_fills_remaining_slots_with_corrections() {
+        let path = temp_path("suggest");
+        write_dictionary(
+            &path,
+            &[
+                (b"gel", b"1"),
+                (b"he", b"1"),
+                (b"hello", b"5"),
+                (b"help", b"10"),
+            ],
+        );
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let keys: Vec<&[u8]> = dictionary
+            .suggest(b"hel", "", 4)
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        // Prefix matches first (help, hello), then corrections (gel, he).
+        assert_eq!(
+            keys,
+            vec![
+                b"help".as_slice(),
+                b"hello".as_slice(),
+                b"gel".as_slice(),
+                b"he".as_slice(),
+            ]
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn suggest_deduplicates_prefix_and_correction_overlap() {
+        let path = temp_path("suggest-dedup");
+        write_dictionary(&path, &[(b"hello", b"5"), (b"help", b"10")]);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let keys: Vec<&[u8]> = dictionary
+            .suggest(b"hel", "", 4)
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert_eq!(keys, vec![b"help".as_slice(), b"hello".as_slice()]);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn suggest_uses_next_words_after_a_committed_word() {
+        let path = temp_path("suggest-next");
+        write_dictionary(&path, &[(b"moon", b"1000"), (b"morning", b"1")]);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let keys: Vec<&[u8]> = dictionary
+            .suggest(b"", "good", 4)
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert_eq!(keys.first().copied(), Some(b"morning".as_slice()));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn suggest_is_empty_without_prefix_or_previous() {
+        let path = temp_path("suggest-empty");
+        write_dictionary(&path, &[(b"hello", b"5")]);
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        assert!(dictionary.suggest(b"", "", 4).is_empty());
+        assert!(dictionary.suggest(b"h", "", 4).is_empty());
+        assert!(dictionary.suggest(b"hel", "", 0).is_empty());
         let _ = std::fs::remove_file(path);
     }
 }

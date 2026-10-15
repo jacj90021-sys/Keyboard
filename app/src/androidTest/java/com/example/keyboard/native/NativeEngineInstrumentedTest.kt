@@ -41,6 +41,9 @@ class NativeEngineInstrumentedTest {
         val next = NativeEngineBridge.dictionaryTopNextWords("good", 4)
         assertTrue("expected next-word candidates after 'good'", next.isNotEmpty())
 
+        val fused = NativeEngineBridge.dictionarySuggest("th", "", 4)
+        assertTrue("expected fused suggestions for 'th'", fused.isNotEmpty())
+
         assertEquals(0, NativeEngineBridge.shutdownEngine())
     }
 }
