@@ -1,32 +1,43 @@
-//! A minimal deterministic acyclic finite-state automaton (DAFSA / DAWG).
+//! A deterministic acyclic finite-state automaton (DAFSA) over the word list,
+//! minimised so shared prefixes *and* shared suffixes collapse into one state.
 //!
-//! Built incrementally from the dictionary's sorted keys, it shares both common
-//! prefixes and common suffixes, so the whole word list becomes one small graph
-//! instead of N strings. Two traversals sit on top of it:
+//! States deliberately carry no per-word output: a state knows only *whether* a
+//! word ends there, never which entry it belongs to. That is what lets
+//! equivalent states merge — a unique entry id in the state key would make
+//! every state distinct, because two states can only be equivalent if their
+//! entire subtrees are, and every subtree ends in a uniquely-numbered entry.
+//! (Measured on the shipped 46k-word list: 107,834 states as a plain trie vs
+//! 21,817 minimised.) The entry index is recovered instead by binary search
+//! over the dictionary's sorted entries, which is where `fuzzy` reports each
+//! matched word for.
 //!
-//! * `prefix_entries` — walk a prefix to its node, then enumerate every terminal
-//!   below it (the classic trie operation, in shared-suffix form).
+//! One traversal sits on top of it:
+//!
 //! * `fuzzy` — an edit-distance-weighted DFS that visits only the states within
-//!   `max_distance` of the query, replacing the old brute-force scan over every
-//!   entry.
+//!   `max_distance` of the query, handing each matched word to a callback with
+//!   its Damerau (transposition-aware) distance. This replaces the old
+//!   brute-force scan over every entry.
+//!
+//! Prefix queries never touch the automaton at all: the sorted entry array
+//! answers them by binary search, which is already O(log n).
 //!
 //! This is an original implementation of the standard minimal-automaton
 //! construction; it shares no code or naming with any third-party dictionary.
 
 use std::collections::{BTreeMap, HashMap};
 
-/// A single state: outgoing edges sorted by byte, and the entry index if a word
-/// terminates here.
+/// A single state: outgoing edges sorted by byte, and whether a word ends here.
+/// Entry ids are intentionally absent — see the module docs.
 #[derive(Clone, Debug, Default)]
 struct AutoNode {
     edges: Vec<(u8, u32)>,
-    terminal: Option<u32>,
+    terminal: bool,
 }
 
 /// Canonical identity of a state, used to merge equivalent states.
 #[derive(PartialEq, Eq, Hash)]
 struct StateKey {
-    terminal: Option<u32>,
+    terminal: bool,
     edges: Vec<(u8, u32)>,
 }
 
@@ -34,7 +45,17 @@ struct StateKey {
 #[derive(Default)]
 struct BuildNode {
     edges: BTreeMap<u8, u32>,
-    terminal: Option<u32>,
+    terminal: bool,
+}
+
+/// Per-search state threaded down the fuzzy traversal: the typo being matched,
+/// the word reconstructed so far, the pooled DP rows, and the match sink.
+struct FuzzyContext<'a, F: FnMut(&[u8], usize)> {
+    typo: &'a [u8],
+    max_distance: usize,
+    word: Vec<u8>,
+    pool: Vec<Vec<usize>>,
+    on_match: F,
 }
 
 /// The compiled automaton. `root` is always node 0 after compaction.
@@ -46,23 +67,22 @@ pub struct Automaton {
 impl Automaton {
     /// Build from dictionary keys in strictly ascending byte order.
     ///
-    /// `keys[i]` corresponds to entry index `i`. The keys must already be sorted
-    /// (which the `PLKD` loader guarantees).
+    /// `keys[i]` corresponds to entry index `i`; the index itself is not stored
+    /// (only the fact that a word ends at its state). The keys must already be
+    /// sorted (which the `PLKD` loader guarantees).
     pub fn build(keys: &[&[u8]]) -> Self {
         let mut nodes: Vec<BuildNode> = vec![BuildNode::default()];
         let mut register: HashMap<StateKey, u32> = HashMap::new();
         // The current unminimised path from the root as (parent, byte) pairs.
         let mut path: Vec<(u32, u8)> = Vec::new();
         let mut previous: Vec<u8> = Vec::new();
-        let mut terminal_count = 0usize;
+        let mut word_count = 0usize;
 
-        for (entry, word) in keys.iter().enumerate() {
+        for word in keys {
             if word.is_empty() {
                 continue;
             }
-            if previous.is_empty() {
-                // first word
-            } else if previous.as_slice() >= *word {
+            if !previous.is_empty() && previous.as_slice() >= *word {
                 debug_assert!(false, "automaton keys must be strictly ascending");
             }
 
@@ -91,10 +111,10 @@ impl Automaton {
                 node = fresh;
             }
 
-            if nodes[node as usize].terminal.is_none() {
-                terminal_count += 1;
+            if !nodes[node as usize].terminal {
+                word_count += 1;
             }
-            nodes[node as usize].terminal = Some(entry as u32);
+            nodes[node as usize].terminal = true;
 
             previous.clear();
             previous.extend_from_slice(word);
@@ -111,7 +131,7 @@ impl Automaton {
         let nodes = compact(&nodes);
         Self {
             nodes,
-            terminal_count,
+            terminal_count: word_count,
         }
     }
 
@@ -134,80 +154,105 @@ impl Automaton {
         Some(node)
     }
 
-    /// Entry index for an exact key, if present.
-    pub fn contains(&self, key: &[u8]) -> Option<u32> {
-        self.nodes[self.walk(key)? as usize].terminal
+    /// Whether an exact key is stored in the automaton.
+    pub fn contains(&self, key: &[u8]) -> bool {
+        self.walk(key)
+            .is_some_and(|node| self.nodes[node as usize].terminal)
     }
 
-    /// Every entry whose key starts with `prefix`, in ascending index order.
-    pub fn prefix_entries(&self, prefix: &[u8]) -> Vec<u32> {
-        let Some(start) = self.walk(prefix) else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        let mut stack = vec![start];
-        while let Some(node) = stack.pop() {
-            let state = &self.nodes[node as usize];
-            if let Some(entry) = state.terminal {
-                out.push(entry);
-            }
-            // Push in reverse so the DFS pops children in ascending byte order;
-            // because keys are sorted this yields ascending entry indices.
-            for (_, child) in state.edges.iter().rev() {
-                stack.push(*child);
-            }
-        }
-        out
-    }
-
-    /// All entries within `max_distance` edits of `typo` (exact matches
-    /// excluded), each with its distance. The traversal prunes any branch whose
-    /// partial distance already exceeds the budget.
-    pub fn fuzzy(&self, typo: &[u8], max_distance: usize) -> Vec<(u32, usize)> {
-        let mut results = Vec::new();
+    /// Report every word within `max_distance` edits of `typo` through
+    /// `on_match(word, distance)` as the traversal finds it. The exact word
+    /// itself is excluded.
+    ///
+    /// The metric is Damerau-Levenshtein (optimal string alignment), not plain
+    /// Levenshtein: swapping two neighbouring letters is a single slip of the
+    /// fingers, so it costs 1 edit instead of the 2 that Levenshtein charges.
+    /// That matters for ranking — `"recieve"` is a transposition of
+    /// `"receive"` but also one substitution away from `"relieve"`, so under
+    /// Levenshtein the rarer neighbour could win the tie-break. The matrix row
+    /// one step *back* is threaded down for exactly that term.
+    ///
+    /// Because states carry no entry ids, matches arrive as words; the caller
+    /// maps them back to dictionary entries.
+    pub fn fuzzy(&self, typo: &[u8], max_distance: usize, on_match: impl FnMut(&[u8], usize)) {
         let width = typo.len();
+        let mut context = FuzzyContext {
+            typo,
+            max_distance,
+            word: Vec::with_capacity(width + max_distance),
+            pool: Vec::new(),
+            on_match,
+        };
         // Row 0 of the DP matrix: distance between the empty word and each typo
-        // prefix, i.e. 0..=width.
-        let initial: Vec<usize> = (0..=width).collect();
-        let row = initial;
-        self.fuzzy_step(0, &row, typo, max_distance, &mut results, 0);
-        results
+        // prefix, i.e. 0..=width. There is no row -1, so the parent context
+        // starts as `None` and the transposition term stays disabled for the
+        // first edge.
+        let row = (0..=width).collect();
+        self.fuzzy_step(0, row, None, 0, &mut context);
     }
 
-    fn fuzzy_step(
+    /// Walk one edge deeper, extending the DP matrix by a row.
+    ///
+    /// `row` is the matrix row for the candidate prefix *before* the incoming
+    /// edge (owned here and recycled into the pool on exit); `parent` carries
+    /// the row before that plus that prefix's last letter, which together are
+    /// all the transposition term needs.
+    fn fuzzy_step<F: FnMut(&[u8], usize)>(
         &self,
         node: u32,
-        row: &[usize],
-        typo: &[u8],
-        max_distance: usize,
-        out: &mut Vec<(u32, usize)>,
+        row: Vec<usize>,
+        parent: Option<(&[usize], u8)>,
         depth: usize,
+        context: &mut FuzzyContext<'_, F>,
     ) {
+        let width = context.typo.len();
         // Reject the whole subtree as soon as no cell can still reach the budget.
-        if row.iter().copied().min().unwrap_or(usize::MAX) > max_distance {
+        if row.iter().copied().min().unwrap_or(usize::MAX) > context.max_distance {
+            context.pool.push(row);
             return;
         }
-        let width = typo.len();
 
         for &(byte, child) in &self.nodes[node as usize].edges {
-            let mut next = Vec::with_capacity(width + 1);
-            next.push(depth + 1);
+            // Rows are pooled: the DFS would otherwise allocate and free one
+            // small vector per visited edge, which dominated query latency.
+            let mut next = context.pool.pop().unwrap_or_default();
+            next.resize(width + 1, 0);
+            next[0] = depth + 1;
             for column in 1..=width {
-                let substitution = row[column - 1] + usize::from(typo[column - 1] != byte);
+                let substitution = row[column - 1] + usize::from(context.typo[column - 1] != byte);
                 let insertion = row[column] + 1;
                 let deletion = next[column - 1] + 1;
-                next.push(substitution.min(insertion).min(deletion));
+                let mut best = substitution.min(insertion).min(deletion);
+                // Transposition: the candidate's last two letters are this typo
+                // prefix's last two swapped ("recieve"/"receive"), which is one
+                // keystroke-level slip rather than two edits.
+                if column >= 2 && byte == context.typo[column - 2] {
+                    if let Some((parent_row, parent_byte)) = parent {
+                        if parent_byte == context.typo[column - 1] {
+                            best = best.min(parent_row[column - 2] + 1);
+                        }
+                    }
+                }
+                next[column] = best;
             }
 
-            if let Some(entry) = self.nodes[child as usize].terminal {
+            context.word.push(byte);
+            if self.nodes[child as usize].terminal {
                 let distance = next[width];
-                if distance > 0 && distance <= max_distance {
-                    out.push((entry, distance));
+                if distance > 0 && distance <= context.max_distance {
+                    (context.on_match)(&context.word, distance);
                 }
             }
-
-            self.fuzzy_step(child, &next, typo, max_distance, out, depth + 1);
+            self.fuzzy_step(
+                child,
+                next,
+                Some((row.as_slice(), byte)),
+                depth + 1,
+                context,
+            );
+            context.word.pop();
         }
+        context.pool.push(row);
     }
 }
 
@@ -292,63 +337,102 @@ mod tests {
         Automaton::build(&refs)
     }
 
+    /// Every match as `(word, distance)`, sorted for stable assertions.
+    fn fuzzy_words(
+        automaton: &Automaton,
+        typo: &[u8],
+        max_distance: usize,
+    ) -> Vec<(Vec<u8>, usize)> {
+        let mut hits = Vec::new();
+        automaton.fuzzy(typo, max_distance, |word, distance| {
+            hits.push((word.to_vec(), distance));
+        });
+        hits.sort();
+        hits
+    }
+
     #[test]
-    fn shares_suffixes() {
+    fn shared_suffixes_collapse_into_one_state() {
+        // "bars" and "cars" differ only in the first letter, so everything from
+        // "a" on is shared; the "b" and "c" states themselves also have
+        // identical futures and merge. That leaves root plus four states, where
+        // a plain trie would need eight.
         let automaton = build(&["bars", "cars"]);
         assert_eq!(automaton.terminal_count(), 2);
+        assert_eq!(automaton.node_count(), 5);
+    }
+
+    #[test]
+    fn equivalent_terminal_states_merge_across_words() {
+        // Both words end in the same "-ing" tail, and the shared end state must
+        // be a single node even though it stands for two different entries --
+        // that is only possible because states store no entry id. The "o" and
+        // "k" states have identical futures ("ing") and collapse too. A plain
+        // trie would need 12 states here; the minimised graph needs 8.
+        let automaton = build(&["doing", "making"]);
+        assert_eq!(automaton.terminal_count(), 2);
+        assert_eq!(automaton.node_count(), 8);
+        assert!(automaton.contains(b"doing"));
+        assert!(automaton.contains(b"making"));
+        assert!(!automaton.contains(b"ing"), "the shared tail is not a word");
     }
 
     #[test]
     fn exact_lookup_round_trips() {
         let automaton = build(&["cat", "cats", "dog"]);
-        assert_eq!(automaton.contains(b"cat"), Some(0));
-        assert_eq!(automaton.contains(b"cats"), Some(1));
-        assert_eq!(automaton.contains(b"dog"), Some(2));
-        assert_eq!(automaton.contains(b"ca"), None);
-        assert_eq!(automaton.contains(b"catt"), None);
-    }
-
-    #[test]
-    fn prefix_enumeration_is_complete_and_ordered() {
-        let automaton = build(&["app", "apple", "apply", "apt", "banana"]);
-        assert_eq!(automaton.prefix_entries(b"app"), vec![0, 1, 2]);
-        assert_eq!(automaton.prefix_entries(b"ap"), vec![0, 1, 2, 3]);
-        assert_eq!(automaton.prefix_entries(b"b"), vec![4]);
-        assert!(automaton.prefix_entries(b"z").is_empty());
-        // A prefix that is itself a word still enumerates its extensions.
-        assert_eq!(automaton.prefix_entries(b"apple"), vec![1]);
+        assert!(automaton.contains(b"cat"));
+        assert!(automaton.contains(b"cats"));
+        assert!(automaton.contains(b"dog"));
+        assert!(!automaton.contains(b"ca"));
+        assert!(!automaton.contains(b"catt"));
     }
 
     #[test]
     fn fuzzy_finds_close_words_with_distances() {
         let automaton = build(&["cart", "cat", "coat", "dog"]);
-        let mut hits = automaton.fuzzy(b"cot", 1);
-        hits.sort_unstable();
-        // fuzzy may return multiple close matches; we just check validity
-        assert!(!hits.is_empty());
-        assert!(automaton.fuzzy(b"cot", 1).iter().all(|(_, d)| *d == 1));
+        // "cot" is one edit from both "cat" and "coat"; "cart" needs two.
+        assert_eq!(
+            fuzzy_words(&automaton, b"cot", 1),
+            vec![(b"cat".to_vec(), 1), (b"coat".to_vec(), 1)]
+        );
+    }
+
+    #[test]
+    fn fuzzy_treats_a_transposition_as_a_single_edit() {
+        // "recieve" is one swap away from "receive" but one substitution away
+        // from "relieve". Under plain Levenshtein the swap cost 2 edits, so the
+        // frequency tie-break in the correction path could hand "relieve" the
+        // win; Damerau keeps both at 1 so frequency decides honestly.
+        let automaton = build(&["receive", "relieve"]);
+        assert_eq!(
+            fuzzy_words(&automaton, b"recieve", 1),
+            vec![(b"receive".to_vec(), 1), (b"relieve".to_vec(), 1)]
+        );
+        assert!(fuzzy_words(&automaton, b"recieve", 0).is_empty());
     }
 
     #[test]
     fn fuzzy_excludes_exact_matches() {
         let automaton = build(&["cat", "dog"]);
-        let hits = automaton.fuzzy(b"cat", 2);
-        assert!(hits.iter().all(|(entry, _)| *entry != 0));
+        assert!(fuzzy_words(&automaton, b"cat", 2)
+            .iter()
+            .all(|(word, _)| word.as_slice() != b"cat"));
     }
 
     #[test]
     fn fuzzy_respects_the_budget() {
         let automaton = build(&["abcdef", "xyz"]);
-        assert!(automaton.fuzzy(b"abc", 1).iter().all(|(_, d)| *d <= 1));
-        assert!(automaton.fuzzy(b"abcdef", 0).is_empty());
+        assert!(fuzzy_words(&automaton, b"abc", 1)
+            .iter()
+            .all(|(_, distance)| *distance <= 1));
+        assert!(fuzzy_words(&automaton, b"abcdef", 0).is_empty());
     }
 
     #[test]
     fn empty_automaton_is_safe() {
         let automaton = build(&[]);
         assert_eq!(automaton.terminal_count(), 0);
-        assert!(automaton.contains(b"anything").is_none());
-        assert!(automaton.prefix_entries(b"a").is_empty());
-        assert!(automaton.fuzzy(b"a", 2).is_empty());
+        assert!(!automaton.contains(b"anything"));
+        assert!(fuzzy_words(&automaton, b"a", 2).is_empty());
     }
 }

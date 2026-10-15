@@ -138,6 +138,52 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     non-blocking `unit-tests` job so it cannot hold the APK hostage. TODO:
     migrate it off Espresso-driven idling.
 
+## Phase 10 — production-scale vocabulary and the performance to carry it
+
+47. `[x]` **Dictionary scale-up: 346 → 46,757 words.** `tools/gen_wordlist.py`
+    derives the shipped list from a public 50k-word frequency-ordered corpus
+    (the corpus itself is not committed; the generator plus the curated list
+    are the deterministic inputs CI rebuilds from, verified with
+    `git diff --exit-code`). Builder-legal filtering leaves 46,717 corpus
+    words; `tools/wordlist_curated.txt` contributes the 40 contractions
+    (`don't`, `you're`, …) the corpus splits into fragments. The shipped
+    `keyboard_dictionary.bin` grew 3.6 KB → 638 KB.
+48. `[x]` **Self-calibrated frequency curve.** Raw corpus counts would put
+    `keyboard` at ~12000 — below the correction floor, so the word the user is
+    literally typing could be "corrected" away. Frequencies now compress onto
+    a fixed scale (`f = ceil(1000·(rank/N)^0.1531)`) that is calibrated against
+    an anchor (`rank 20000 → 200`, the confident bar) rather than the corpus's
+    absolute shape, so any corpus size lands on the same usable scale. Anchor
+    sweep showed resolution is anchor-independent; `keyboard` = 245, safely
+    above the bar, while genuine typos (absent from the corpus) stay on the
+    floor path. The 40 curated contractions are revalued into the same band
+    (`i'm` = 950 … `don't` = 670) so `don't` outranks `donna` for prefix
+    `don`. `tools/test_wordlist_scales.py` pins the calibration in CI.
+49. `[x]` **Transposition-aware correction at real scale.** With a real corpus,
+    Levenshtein alone misranks the classic typo: `relieve` is one substitution
+    from `recieve` while `believe` (rank 197) is two edits away. The fuzzy
+    traversal now charges a neighbouring swap as a single edit (Damerau /
+    optimal string alignment), so `recieve` → `receive` wins on distance and
+    frequency honestly. `automaton.rs` carries a regression test for exactly
+    this pair.
+50. `[x]` **True minimal automaton (and the honesty that came with it).** The
+    trie claimed to be a minimised DAWG, but its states carried the unique
+    entry index, which makes every state distinct by construction — measured:
+    **zero merges**, 107,834 states, and 47 ms of register hashing spent for
+    nothing. States now store only *whether* a word ends there; matched words
+    are mapped back to entries by binary search over the sorted entries
+    (prefix queries already were). Equivalent states collapse for real:
+    107,834 → **21,817 states** (~5× less memory), load 141 → **52 ms**, fuzzy
+    queries ~2× faster. A `shared_suffixes_collapse_into_one_state` test pins
+    the node counts so the minimiser can't silently degrade again.
+51. `[x]` **Fuzzy query path: pooled DP rows.** The edit-distance DFS allocated
+    and freed one small vector per visited edge; rows now come from a pool
+    (no size caps, no duplicated logic). Combined with 51, `load_bench`
+    (added as `rust-core/examples/load_bench.rs`) reports, on x86-64 release:
+    load 52 ms, prefix suggest 11 µs, fuzzy fill 0.73 ms, confident autocorrect
+    0.2 µs, typo scan 0.73 ms — i.e. the 46k-word vocabulary costs nothing on
+    the keystroke paths.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

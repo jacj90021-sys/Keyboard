@@ -767,20 +767,18 @@ impl MappedDictionary {
         max_distance: usize,
         promotions: &PromotionTable,
     ) -> Vec<(usize, usize, u64)> {
-        let mut matches: Vec<(usize, usize, u64)> = self
-            .automaton
-            .fuzzy(typo, max_distance)
-            .into_iter()
-            .filter_map(|(entry_index, distance)| {
-                let idx = entry_index as usize;
-                let key = self.key_at(idx)?;
-                Some((
-                    idx,
+        // The automaton reports matched words (its states carry no entry ids);
+        // the sorted entry array maps each one back in O(log n).
+        let mut matches: Vec<(usize, usize, u64)> = Vec::new();
+        self.automaton.fuzzy(typo, max_distance, |word, distance| {
+            if let Some(index) = self.exact_match(word) {
+                matches.push((
+                    index,
                     distance,
-                    self.frequency_at(idx) + promotions.boost(key),
-                ))
-            })
-            .collect();
+                    self.frequency_at(index) + promotions.boost(word),
+                ));
+            }
+        });
 
         // Prefer the smallest edit distance; break ties by frequency so a common
         // word beats a rare one, then fall back to dictionary order for stability.
@@ -831,28 +829,26 @@ impl MappedDictionary {
             AUTOCORRECT_FLOOR
         };
 
-        // A transposition ("teh" -> "the") is the most common slip and counts
-        // as *two* Levenshtein edits, so the radius has to be 2 to catch it.
-        // The floor/margin above stop this from over-reaching.
+        // The metric is transposition-aware (Damerau), so a swapped pair
+        // ("teh" -> "the") already counts as a single edit; the radius of 2 is
+        // there to catch genuinely two-mistake typos. The floor/margin above
+        // stop this from over-reaching.
         let radius = 2;
 
-        let mut candidates: Vec<(usize, usize, u64)> = self
-            .automaton
-            .fuzzy(typed, radius)
-            .into_iter()
-            .filter_map(|(entry_index, distance)| {
-                let index = entry_index as usize;
-                let key = self.key_at(index)?;
-                if key == typed {
-                    return None; // never "correct" to the word already typed
-                }
-                let score = self.frequency_at(index) + promotions.boost(key);
-                if score < min_score {
-                    return None;
-                }
-                Some((index, distance, score))
-            })
-            .collect();
+        let mut candidates: Vec<(usize, usize, u64)> = Vec::new();
+        self.automaton.fuzzy(typed, radius, |key, distance| {
+            if key == typed {
+                return; // never "correct" to the word already typed
+            }
+            let Some(index) = self.exact_match(key) else {
+                return;
+            };
+            let score = self.frequency_at(index) + promotions.boost(key);
+            if score < min_score {
+                return;
+            }
+            candidates.push((index, distance, score));
+        });
 
         // Closest edit first, then most frequent, then dictionary order so the
         // result is deterministic.
@@ -1282,17 +1278,21 @@ mod tests {
             return;
         }
         let dictionary = MappedDictionary::load(&asset).expect("shipped asset must parse");
-        assert!(dictionary.entry_count() > 100);
+        // The pre-corpus dictionary held 346 entries; a regeneration that ships
+        // the toy list again must fail here, not in production.
+        assert!(dictionary.entry_count() > 10_000);
         assert!(dictionary.exact_match(b"the").is_some());
         // Contractions are part of the word list now.
         assert!(dictionary.exact_match(b"don't").is_some());
         let top = dictionary.top_prefixes(b"th", 4);
         assert!(!top.is_empty());
+        // Typing "don" must surface the contraction. The corpus also carries
+        // "don" as a word in its own right, so which one leads is a frequency
+        // question -- the requirement is only that the contraction is offered.
         let don = dictionary.suggest(b"don", "", 3);
-        assert_eq!(
-            don.first().and_then(|&index| dictionary.key_at(index)),
-            Some(b"don't".as_slice())
-        );
+        assert!(don
+            .iter()
+            .any(|&index| dictionary.key_at(index) == Some(b"don't".as_slice())));
     }
 
     #[test]

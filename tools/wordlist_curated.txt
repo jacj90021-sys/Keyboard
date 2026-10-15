@@ -1,0 +1,53 @@
+# Words the shipped dictionary needs that the frequency corpus does not carry.
+#
+# The corpus (OpenSubtitles) tokenizes contractions into pieces -- "don't"
+# arrives as "don" + "'t" -- so a whole contraction has no count to inherit.
+# These frequencies are hand-set: they keep the relative ordering of the
+# original curated seed, re-based so the commonest contractions sit among the
+# corpus's everyday vocabulary (i'm 950, it's 857, don't 670) rather than
+# below it. Every value stays at or above AUTOCORRECT_CONFIDENT (200), so the
+# engine never rewrites a correctly typed contraction.
+#
+# Rebuild the word list with:
+#     python3 tools/gen_wordlist.py --input <en_50k.txt> --top 50000
+
+aren't 353
+can't 623
+couldn't 409
+didn't 558
+doesn't 521
+don't 670
+hadn't 278
+hasn't 334
+haven't 390
+he'd 250
+he's 623
+i'd 390
+i'll 558
+i'm 950
+i've 577
+isn't 483
+it's 857
+let's 651
+she'd 250
+she's 577
+shouldn't 371
+that's 717
+there's 623
+they'd 278
+they'll 409
+they're 530
+they've 390
+wasn't 371
+we'd 297
+we'll 465
+we're 577
+we've 437
+weren't 297
+what's 577
+won't 530
+wouldn't 427
+you'd 343
+you'll 502
+you're 670
+you've 483

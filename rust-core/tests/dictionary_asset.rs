@@ -15,7 +15,9 @@ fn shipped_asset_is_usable_through_the_public_api() {
 
     let dictionary = MappedDictionary::load(&asset).expect("shipped asset must parse");
 
-    assert!(dictionary.entry_count() > 100);
+    // The pre-corpus dictionary held 346 entries; this pins the scale-up to a
+    // real vocabulary so a regeneration can never silently ship the toy list.
+    assert!(dictionary.entry_count() > 10_000);
     assert!(dictionary.exact_match(b"the").is_some());
     assert!(!dictionary.suggest(b"th", "", 4).is_empty());
     assert!(!dictionary.suggest(b"", "good", 4).is_empty());

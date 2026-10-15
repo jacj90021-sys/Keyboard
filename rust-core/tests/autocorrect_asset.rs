@@ -62,11 +62,59 @@ fn classic_misspelling_reaches_the_right_word() {
 }
 
 #[test]
-fn a_nonsense_prefix_yields_no_suggestions() {
+fn a_nonsense_prefix_never_pads_the_bar_with_unrelated_words() {
     let Some(dictionary) = shipped_dictionary() else {
         return;
     };
-    // Nothing starts with "zz" and no close match is plausible, so the bar stays
-    // empty rather than being padded with unrelated common words.
-    assert!(dictionary.suggest(b"zz", "", 4).is_empty());
+    // "zz" turns out to be a rare dictionary word itself, so a z-word or a
+    // genuinely close match is a fair answer. What must never happen is
+    // padding the bar with unrelated common words -- that is the bug this
+    // guards, and it took a real-size vocabulary to reproduce.
+    let unrelated = ["the", "and", "of", "to", "in", "hello", "you"];
+    let suggestions = dictionary.suggest(b"zz", "", 4);
+    assert!(
+        !suggestions.is_empty(),
+        "'zz' is a word, so it must be offered"
+    );
+    for index in suggestions {
+        let key = dictionary
+            .key_at(index)
+            .expect("index came from the dictionary");
+        let word = String::from_utf8_lossy(key).into_owned();
+        assert!(
+            !unrelated.contains(&word.as_str()),
+            "{word:?} has nothing to do with 'zz'"
+        );
+        if !word.starts_with("zz") {
+            assert!(
+                edit_distance(b"zz", key) <= 2,
+                "{word:?} is too far from 'zz' to read as a typo fix"
+            );
+        }
+    }
+}
+
+/// Tiny OSA edit distance, mirroring the engine's transposition-aware metric.
+fn edit_distance(left: &[u8], right: &[u8]) -> usize {
+    let (rows, cols) = (left.len() + 1, right.len() + 1);
+    let mut grid = vec![vec![0usize; cols]; rows];
+    for (i, row) in grid.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, slot) in grid[0].iter_mut().enumerate() {
+        *slot = j;
+    }
+    for i in 1..rows {
+        for j in 1..cols {
+            let cost = usize::from(left[i - 1] != right[j - 1]);
+            let mut best = (grid[i - 1][j] + 1)
+                .min(grid[i][j - 1] + 1)
+                .min(grid[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && left[i - 1] == right[j - 2] && left[i - 2] == right[j - 1] {
+                best = best.min(grid[i - 2][j - 2] + 1);
+            }
+            grid[i][j] = best;
+        }
+    }
+    grid[rows - 1][cols - 1]
 }
