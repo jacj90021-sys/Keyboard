@@ -26,35 +26,172 @@ pub struct MappedDictionary {
 }
 
 static CONTEXT_TRANSITIONS: &[(&str, &str, u32)] = &[
-    ("the", "quick", 12),
-    ("quick", "brown", 10),
-    ("brown", "fox", 10),
-    ("jumped", "over", 8),
-    ("over", "the", 9),
-    ("i", "am", 11),
+    // determiners / particles
+    ("of", "the", 10),
+    ("in", "the", 10),
+    ("on", "the", 9),
+    ("at", "the", 8),
+    ("for", "the", 8),
+    ("with", "the", 7),
+    // pronoun + auxiliary
+    ("i", "am", 12),
+    ("i", "have", 9),
+    ("i", "will", 9),
+    ("i", "think", 10),
+    ("i", "know", 10),
+    ("i", "want", 10),
+    ("i", "need", 10),
+    ("i", "like", 9),
+    ("i", "love", 8),
     ("we", "are", 11),
+    ("we", "can", 10),
+    ("we", "need", 10),
+    ("we", "should", 9),
+    ("we", "will", 9),
+    ("you", "are", 11),
     ("you", "can", 10),
-    ("can", "use", 8),
+    ("you", "know", 9),
+    ("you", "want", 9),
+    ("you", "need", 9),
+    ("they", "are", 9),
+    ("they", "will", 7),
+    ("he", "is", 9),
+    ("she", "is", 9),
+    // copulas / questions
+    ("it", "is", 12),
+    ("it", "was", 9),
+    ("that", "is", 11),
     ("this", "is", 11),
-    ("it", "is", 10),
-    ("please", "send", 7),
+    ("there", "is", 10),
+    ("there", "are", 9),
+    ("what", "is", 10),
+    ("what", "are", 9),
+    ("who", "is", 9),
+    ("where", "is", 8),
+    ("when", "is", 7),
+    ("why", "not", 8),
+    ("is", "it", 9),
+    ("is", "that", 8),
+    ("is", "not", 8),
+    ("how", "are", 9),
+    ("how", "do", 9),
+    ("how", "can", 8),
+    ("how", "much", 9),
+    ("how", "many", 8),
+    // requests / politeness
     ("thank", "you", 12),
     ("thanks", "again", 8),
+    ("please", "send", 8),
+    ("please", "call", 7),
     ("hello", "world", 12),
-    ("good", "morning", 10),
-    ("good", "night", 9),
-    ("see", "you", 9),
-    ("come", "back", 8),
-    ("go", "away", 4),
+    ("hello", "there", 9),
+    ("hello", "everyone", 8),
+    ("good", "morning", 11),
+    ("good", "night", 10),
+    ("good", "day", 8),
+    ("sorry", "about", 8),
+    ("excuse", "me", 9),
+    ("you", "welcome", 8),
+    ("no", "problem", 9),
+    ("no", "thanks", 8),
+    ("yes", "please", 9),
+    // helpers
+    ("let", "me", 10),
+    ("let", "us", 8),
+    ("give", "me", 9),
+    ("tell", "me", 10),
+    ("help", "me", 10),
+    ("show", "me", 8),
+    ("call", "me", 8),
+    ("email", "me", 8),
+    ("meet", "you", 8),
+    ("see", "you", 10),
+    // verbs + to
+    ("want", "to", 10),
+    ("need", "to", 10),
+    ("have", "to", 10),
+    ("like", "to", 9),
+    ("try", "to", 8),
+    ("talk", "to", 8),
+    ("speak", "to", 8),
+    ("listen", "to", 8),
+    ("go", "to", 8),
+    ("come", "to", 7),
+    ("to", "be", 10),
+    ("to", "do", 9),
+    ("to", "go", 8),
+    ("to", "see", 8),
+    ("to", "know", 8),
+    // movement
+    ("come", "back", 9),
+    ("come", "here", 8),
+    ("go", "back", 8),
+    ("go", "away", 5),
+    ("wait", "for", 8),
+    // look / feel / find
+    ("look", "at", 8),
+    ("look", "for", 8),
+    ("look", "like", 8),
+    ("feel", "good", 8),
+    ("feel", "like", 8),
+    ("find", "the", 7),
+    ("find", "it", 7),
+    // time
+    ("right", "now", 9),
+    ("just", "now", 7),
+    ("not", "now", 6),
+    ("next", "time", 8),
+    ("last", "time", 8),
+    ("one", "day", 7),
+    ("maybe", "today", 7),
+    ("maybe", "tomorrow", 7),
+    // work / daily
+    ("work", "from", 6),
+    ("work", "with", 6),
+    ("work", "for", 6),
+    ("get", "the", 6),
+    ("make", "it", 7),
+    ("make", "sure", 8),
+    ("take", "it", 7),
+    // the classic pangram
+    ("the", "quick", 12),
+    ("the", "lazy", 8),
+    ("quick", "brown", 11),
+    ("brown", "fox", 11),
+    ("fox", "jumps", 11),
+    ("jumps", "over", 10),
+    ("over", "the", 10),
+    ("lazy", "dog", 10),
 ];
 
-fn context_boost(previous: &str, candidate: &str) -> u64 {
-    for (left, right, score) in CONTEXT_TRANSITIONS {
-        if *left == previous && *right == candidate {
-            return *score as u64;
-        }
-    }
-    0
+/// Bigram weight table, sorted once on first use so lookups are a binary search
+/// instead of a linear scan over the literal above.
+fn context_table() -> &'static [(&'static str, &'static str, u64)] {
+    static TABLE: std::sync::OnceLock<Vec<(&'static str, &'static str, u64)>> =
+        std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut rows: Vec<(&'static str, &'static str, u64)> = CONTEXT_TRANSITIONS
+            .iter()
+            .map(|(left, right, score)| (*left, *right, *score as u64))
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(b.0).then_with(|| a.1.cmp(b.1)));
+        rows.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+        rows
+    })
+}
+
+fn context_boost(previous: &[u8], candidate: &[u8]) -> u64 {
+    let table = context_table();
+    table
+        .binary_search_by(|probe| {
+            probe
+                .0
+                .as_bytes()
+                .cmp(previous)
+                .then_with(|| probe.1.as_bytes().cmp(candidate))
+        })
+        .map(|index| table[index].2)
+        .unwrap_or(0)
 }
 
 /// Parse a stored value as a non-negative frequency. Values are advisory: a
@@ -293,10 +430,9 @@ impl MappedDictionary {
         let mut candidates: Vec<(usize, u64)> = (start..end)
             .map(|index| {
                 let key = self.key_at(index).unwrap_or_default();
-                let text = String::from_utf8_lossy(key);
                 let exactness = if key == prefix { 20u64 } else { 0u64 };
                 let frequency = self.frequency_at(index);
-                let score = frequency + exactness + context_boost(previous, &text);
+                let score = frequency + exactness + context_boost(previous.as_bytes(), key);
                 (index, score)
             })
             .collect();
@@ -306,18 +442,29 @@ impl MappedDictionary {
     }
 
     pub fn top_next_words(&self, previous: &str, max: usize) -> Vec<usize> {
-        let mut candidates: Vec<(usize, u64)> = (0..self.entry_count())
+        let previous_bytes = previous.as_bytes();
+        // Rank by context first, then frequency. A transition hit should beat a
+        // merely common word, otherwise next-word hints would just echo the most
+        // frequent entries ("the", "be", ...) regardless of what was typed.
+        let mut candidates: Vec<(usize, u64, u64)> = (0..self.entry_count())
             .map(|index| {
                 let key = self.key_at(index).unwrap_or_default();
-                let text = String::from_utf8_lossy(key);
+                let boost = context_boost(previous_bytes, key);
                 let frequency = self.frequency_at(index);
-                let score = frequency + (context_boost(previous, &text) * 4);
-                (index, score)
+                (index, boost, frequency)
             })
             .collect();
 
-        candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        candidates.into_iter().take(max).map(|(index, _)| index).collect()
+        candidates.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        candidates
+            .into_iter()
+            .take(max)
+            .map(|(index, _, _)| index)
+            .collect()
     }
 
     pub fn nearest_words(&self, typo: &[u8], max: usize, max_distance: usize) -> Vec<usize> {
@@ -552,7 +699,7 @@ mod tests {
         write_dictionary(
             &path,
             &[
-                (b"moon", b"1"),
+                (b"moon", b"1000"),
                 (b"morning", b"1"),
             ],
         );
@@ -563,7 +710,29 @@ mod tests {
             .iter()
             .map(|&index| dictionary.key_at(index).unwrap())
             .collect();
+        // "morning" is far rarer, but the good->morning transition must win.
         assert_eq!(keys.first().copied(), Some(b"morning".as_slice()));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn next_word_without_context_falls_back_to_frequency() {
+        let path = temp_path("next-word-freq");
+        write_dictionary(
+            &path,
+            &[
+                (b"moon", b"1000"),
+                (b"morning", b"1"),
+            ],
+        );
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let next = dictionary.top_next_words("unrelated", 2);
+        let keys: Vec<&[u8]> = next
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert_eq!(keys, vec![b"moon".as_slice(), b"morning".as_slice()]);
         let _ = std::fs::remove_file(path);
     }
 
@@ -656,5 +825,21 @@ mod tests {
         assert!(dictionary.exact_match(b"the").is_some());
         let top = dictionary.top_prefixes(b"th", 4);
         assert!(!top.is_empty());
+    }
+
+    #[test]
+    fn context_table_is_sorted_and_hits_expected_pairs() {
+        let table = context_table();
+        assert!(
+            table
+                .windows(2)
+                .all(|w| (w[0].0, w[0].1) < (w[1].0, w[1].1)),
+            "context table must be strictly sorted after init"
+        );
+        assert!(context_boost(b"thank", b"you") > 0);
+        assert!(context_boost(b"quick", b"brown") > 0);
+        assert!(context_boost(b"good", b"morning") > 0);
+        assert_eq!(context_boost(b"brown", b"sugar"), 0);
+        assert_eq!(context_boost(b"", b""), 0);
     }
 }

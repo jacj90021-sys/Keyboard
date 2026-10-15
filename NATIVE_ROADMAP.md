@@ -23,6 +23,19 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 7. `[x]` **Instrumentation smoke test** — native load/init/query on device.
 8. `[x]` **Docs** — document the `PLKD` format and the JNI surface.
 
+## Phase 2
+
+9. `[x]` **Scale the context table** — many more shipped-word bigrams, sorted
+   once at runtime, binary-searched instead of linear-scanned.
+10. `[ ]` **Large-dictionary test** — prove prefix/exact queries stay correct
+    when the dictionary has tens of thousands of entries.
+11. `[ ]` **Bridge fallback tests** — assert the Kotlin wrappers degrade safely
+    when the native library is not present.
+12. `[ ]` **Unified native suggest call** — one boundary call that merges
+    prefix, context and correction results in Rust.
+13. `[ ]` **Case-preserving suggestions** — carry the user's capitalisation
+    through to the suggestion chips.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.
