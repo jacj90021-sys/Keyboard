@@ -519,4 +519,25 @@ mod tests {
         assert_eq!(keys.first().copied(), Some(b"morning".as_slice()));
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn next_word_transition_prefers_boosted_match() {
+        let path = temp_path("next-word");
+        write_dictionary(
+            &path,
+            &[
+                (b"moon", b"1"),
+                (b"morning", b"1"),
+            ],
+        );
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let next = dictionary.top_next_words("good", 2);
+        let keys: Vec<&[u8]> = next
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert_eq!(keys.first().copied(), Some(b"morning".as_slice()));
+        let _ = std::fs::remove_file(path);
+    }
 }
