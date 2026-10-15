@@ -57,6 +57,19 @@ fn context_boost(previous: &str, candidate: &str) -> u64 {
     0
 }
 
+/// Parse a stored value as a non-negative frequency. Values are advisory: a
+/// malformed value ranks last instead of failing the whole dictionary.
+fn frequency_value(raw: &[u8]) -> u64 {
+    std::str::from_utf8(raw)
+        .ok()
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+/// Smallest possible on-disk size of one entry: 4-byte length header plus the
+/// required (non-empty) key. Used to bound `entry_count` before allocating.
+const MIN_ENTRY_BYTES: usize = 5;
+
 impl MappedDictionary {
     pub fn load(path: &Path) -> Result<Self, DictionaryError> {
         // Validate and mmap the source file. Header parsing is deliberately simple
@@ -111,6 +124,18 @@ impl MappedDictionary {
         }
 
         let entry_count = u32::from_le_bytes(data[8..12].try_into().unwrap_or([0; 4])) as usize;
+
+        // Bound the entry count against the file size before allocating. This
+        // keeps a corrupt header from triggering a huge allocation or a long
+        // scan: every entry needs at least MIN_ENTRY_BYTES bytes.
+        let max_possible_entries = (mapped_size - 12) / MIN_ENTRY_BYTES;
+        if entry_count > max_possible_entries {
+            unsafe { libc::munmap(mapped_ptr, mapped_size) };
+            return Err(DictionaryError::InvalidFormat(
+                "entry count exceeds file size".to_string(),
+            ));
+        }
+
         let mut cursor = 12usize;
         let mut entries = Vec::with_capacity(entry_count);
 
@@ -189,6 +214,11 @@ impl MappedDictionary {
         })
     }
 
+    /// Convenience accessor that decodes the entry's stored frequency.
+    pub fn frequency_at(&self, index: usize) -> u64 {
+        self.value_at(index).map(frequency_value).unwrap_or(0)
+    }
+
     pub fn exact_match(&self, key: &[u8]) -> Option<usize> {
         let (mut low, mut high) = (0usize, self.entries.len());
         while low < high {
@@ -243,11 +273,7 @@ impl MappedDictionary {
         let end = self.prefix_end(prefix);
         let mut candidates: Vec<(usize, u64)> = (start..end)
             .map(|index| {
-                let score = self
-                    .value_at(index)
-                    .and_then(|value| std::str::from_utf8(value).ok())
-                    .and_then(|text| text.trim().parse::<u64>().ok())
-                    .unwrap_or(0);
+                let score = self.frequency_at(index);
                 (index, score)
             })
             .collect();
@@ -269,11 +295,7 @@ impl MappedDictionary {
                 let key = self.key_at(index).unwrap_or_default();
                 let text = String::from_utf8_lossy(key);
                 let exactness = if key == prefix { 20u64 } else { 0u64 };
-                let frequency = self
-                    .value_at(index)
-                    .and_then(|value| std::str::from_utf8(value).ok())
-                    .and_then(|value| value.trim().parse::<u64>().ok())
-                    .unwrap_or(0);
+                let frequency = self.frequency_at(index);
                 let score = frequency + exactness + context_boost(previous, &text);
                 (index, score)
             })
@@ -288,11 +310,7 @@ impl MappedDictionary {
             .map(|index| {
                 let key = self.key_at(index).unwrap_or_default();
                 let text = String::from_utf8_lossy(key);
-                let frequency = self
-                    .value_at(index)
-                    .and_then(|value| std::str::from_utf8(value).ok())
-                    .and_then(|value| value.trim().parse::<u64>().ok())
-                    .unwrap_or(0);
+                let frequency = self.frequency_at(index);
                 let score = frequency + (context_boost(previous, &text) * 4);
                 (index, score)
             })
@@ -303,7 +321,7 @@ impl MappedDictionary {
     }
 
     pub fn nearest_words(&self, typo: &[u8], max: usize, max_distance: usize) -> Vec<usize> {
-        let mut matches: Vec<(usize, usize)> = (0..self.entry_count())
+        let mut matches: Vec<(usize, usize, u64)> = (0..self.entry_count())
             .filter_map(|index| {
                 let key = self.key_at(index)?;
                 if key.len().abs_diff(typo.len()) > max_distance {
@@ -313,15 +331,21 @@ impl MappedDictionary {
                 if distance == 0 || distance > max_distance {
                     return None;
                 }
-                Some((index, distance))
+                Some((index, distance, self.frequency_at(index)))
             })
             .collect();
 
-        matches.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        // Prefer the smallest edit distance; break ties by frequency so a common
+        // word beats a rare one, then fall back to dictionary order for stability.
+        matches.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| a.0.cmp(&b.0))
+        });
         matches
             .into_iter()
             .take(max)
-            .map(|(index, _)| index)
+            .map(|(index, _, _)| index)
             .collect()
     }
 }
@@ -439,9 +463,9 @@ mod tests {
         write_dictionary(
             &path,
             &[
-                (b"card", b"1"),
-                (b"care", b"2"),
-                (b"cash", b"3"),
+                (b"card", b"5"),
+                (b"care", b"1"),
+                (b"cash", b"50"),
                 (b"dog", b"4"),
             ],
         );
@@ -452,7 +476,9 @@ mod tests {
             .iter()
             .map(|&index| dictionary.key_at(index).unwrap())
             .collect();
-        assert_eq!(keys, vec![b"card".as_slice(), b"care".as_slice(), b"cash".as_slice()]);
+        // distance 1: card. distance 2: cash (freq 50) then care (freq 1).
+        // Index order would put care first, so this pins the frequency tie-break.
+        assert_eq!(keys, vec![b"card".as_slice(), b"cash".as_slice(), b"care".as_slice()]);
         let _ = std::fs::remove_file(path);
     }
 
@@ -539,5 +565,80 @@ mod tests {
             .collect();
         assert_eq!(keys.first().copied(), Some(b"morning".as_slice()));
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_unsorted_keys() {
+        let path = temp_path("unsorted");
+        write_dictionary(&path, &[(b"beta", b"1"), (b"alpha", b"2")]);
+        assert!(MappedDictionary::load(&path).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_duplicate_keys() {
+        let path = temp_path("duplicate");
+        write_dictionary(&path, &[(b"same", b"1"), (b"same", b"2")]);
+        assert!(MappedDictionary::load(&path).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_entry_count_larger_than_file() {
+        let path = temp_path("huge-count");
+        let mut data = Vec::new();
+        data.extend_from_slice(MAGIC);
+        data.extend_from_slice(&VERSION.to_le_bytes());
+        data.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(b"a");
+        data.extend_from_slice(b"1");
+        std::fs::write(&path, &data).unwrap();
+        assert!(MappedDictionary::load(&path).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_truncated_value_bounds() {
+        let path = temp_path("truncated-value");
+        let mut data = Vec::new();
+        data.extend_from_slice(MAGIC);
+        data.extend_from_slice(&VERSION.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&9u16.to_le_bytes());
+        data.extend_from_slice(b"a");
+        data.extend_from_slice(b"1");
+        std::fs::write(&path, &data).unwrap();
+        assert!(MappedDictionary::load(&path).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn load_never_panics_on_random_bytes() {
+        // Deterministic LCG so a failure is reproducible without extra deps.
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        for iteration in 0..512u32 {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let len = ((state >> 33) as usize) % 256;
+            let mut bytes = Vec::with_capacity(len);
+            let mut local = state;
+            for _ in 0..len {
+                local = local.wrapping_mul(6364136223846793005).wrapping_add(1);
+                bytes.push((local >> 40) as u8);
+            }
+            // Exercise the header path often, but not always.
+            if iteration % 3 == 0 && bytes.len() >= 12 {
+                bytes[0..4].copy_from_slice(MAGIC);
+                bytes[4..8].copy_from_slice(&VERSION.to_le_bytes());
+            }
+            let path = temp_path("fuzz");
+            std::fs::write(&path, &bytes).unwrap();
+            let _ = MappedDictionary::load(&path); // must not panic or abort
+            let _ = std::fs::remove_file(path);
+        }
     }
 }

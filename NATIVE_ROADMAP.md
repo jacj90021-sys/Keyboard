@@ -8,13 +8,13 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 
 ## Queue
 
-1. `[ ]` **Fix committed manifest drift** — `jni` dependency + `Cargo.lock` were
+1. `[x]` **Fix committed manifest drift** — `jni` dependency + `Cargo.lock` were
    only in the working tree, so a clean checkout could not build the crate.
-2. `[ ]` **Frequency-aware corrections** — rank edit-distance matches by
+2. `[x]` **Frequency-aware corrections** — rank edit-distance matches by
    `(distance, frequency desc, index)` instead of `(distance, index)`.
-3. `[ ]` **Parser hardening** — reject absurd `entry_count` before allocating,
+3. `[x]` **Parser hardening** — reject absurd `entry_count` before allocating,
    reject unsorted/duplicate keys, reject truncated value bounds.
-4. `[ ]` **No-panic fuzz test** — feed pseudo-random byte buffers to the loader
+4. `[x]` **No-panic fuzz test** — feed pseudo-random byte buffers to the loader
    and assert it always returns `Ok`/`Err` without panicking or aborting.
 5. `[ ]` **Extract testable suggestion planner** — move the Kotlin candidate
    merge rules into a pure function with unit tests.

@@ -101,26 +101,6 @@ pub extern "C" fn keyboard_core_ping(value: i32) -> i32 {
     value.wrapping_mul(2).wrapping_add(1)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn init_and_health_check_succeed() {
-        assert_eq!(keyboard_core_init(), 0);
-        assert_eq!(keyboard_core_health_check(), 0);
-        assert_eq!(keyboard_core_shutdown(), 0);
-    }
-
-    #[test]
-    fn ping_requires_initialization() {
-        assert!(keyboard_core_health_check() != 0);
-        assert_eq!(keyboard_core_init(), 0);
-        assert_eq!(keyboard_core_ping(41), 83);
-        let _ = keyboard_core_shutdown();
-    }
-}
-
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::jint;
@@ -392,5 +372,25 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
     match env.new_string(output) {
         Ok(result) => result.into_raw(),
         Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_and_health_check_succeed() {
+        assert_eq!(keyboard_core_init(), 0);
+        assert_eq!(keyboard_core_health_check(), 0);
+        assert_eq!(keyboard_core_shutdown(), 0);
+    }
+
+    #[test]
+    fn ping_requires_initialization() {
+        assert!(keyboard_core_health_check() != 0);
+        assert_eq!(keyboard_core_init(), 0);
+        assert_eq!(keyboard_core_ping(41), 83);
+        let _ = keyboard_core_shutdown();
     }
 }
