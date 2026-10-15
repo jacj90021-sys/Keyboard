@@ -101,9 +101,9 @@ pub extern "C" fn keyboard_core_ping(value: i32) -> i32 {
     value.wrapping_mul(2).wrapping_add(1)
 }
 
-use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::jint;
+use jni::JNIEnv;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -289,7 +289,11 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let max = if max_count <= 0 { 4usize } else { max_count as usize };
+    let max = if max_count <= 0 {
+        4usize
+    } else {
+        max_count as usize
+    };
     let mut output = String::new();
 
     if let Ok(guard) = DICTIONARY.lock() {
@@ -326,7 +330,11 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let max = if max_count <= 0 { 4usize } else { max_count as usize };
+    let max = if max_count <= 0 {
+        4usize
+    } else {
+        max_count as usize
+    };
     let mut output = String::new();
 
     if let Ok(guard) = DICTIONARY.lock() {
@@ -368,7 +376,11 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         Err(_) => String::new(),
     };
 
-    let max = if max_count <= 0 { 4usize } else { max_count as usize };
+    let max = if max_count <= 0 {
+        4usize
+    } else {
+        max_count as usize
+    };
     let mut output = String::new();
 
     if let Ok(guard) = DICTIONARY.lock() {
@@ -405,7 +417,11 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         Err(_) => String::new(),
     };
 
-    let max = if max_count <= 0 { 4usize } else { max_count as usize };
+    let max = if max_count <= 0 {
+        4usize
+    } else {
+        max_count as usize
+    };
     let mut output = String::new();
 
     if let Ok(guard) = DICTIONARY.lock() {
@@ -430,7 +446,6 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
     }
 }
 
-
 #[no_mangle]
 pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionarySuggest(
     mut env: JNIEnv,
@@ -448,12 +463,15 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         Err(_) => String::new(),
     };
 
-    let max = if max_count <= 0 { 4usize } else { max_count as usize };
+    let max = if max_count <= 0 {
+        4usize
+    } else {
+        max_count as usize
+    };
     engine_query(&mut env, |dictionary, promotions| {
         dictionary.suggest_ranked(requested.as_bytes(), &prior, max, promotions)
     })
 }
-
 
 #[no_mangle]
 pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustDictionaryPromote(
@@ -497,6 +515,18 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
         .lock()
         .map(|guard| guard.len() as i32)
         .unwrap_or(0)
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustEngineVersion(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jstring {
+    match env.new_string(env!("CARGO_PKG_VERSION")) {
+        Ok(result) => result.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[cfg(test)]

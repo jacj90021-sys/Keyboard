@@ -49,6 +49,7 @@ class NativeEngineInstrumentedTest {
         assertEquals(1, NativeEngineBridge.dictionaryPromotionCount())
         assertEquals(0, NativeEngineBridge.dictionaryClearPromotions())
         assertEquals(0, NativeEngineBridge.dictionaryPromotionCount())
+        assertNotNull(NativeEngineBridge.engineVersion())
 
         assertEquals(0, NativeEngineBridge.shutdownEngine())
     }

@@ -46,6 +46,7 @@ class NativeEngineBridgeFallbackTest {
         assertEquals(-1, NativeEngineBridge.dictionaryPromote("hello"))
         assertEquals(-1, NativeEngineBridge.dictionaryClearPromotions())
         assertEquals(0, NativeEngineBridge.dictionaryPromotionCount())
+        assertNull(NativeEngineBridge.engineVersion())
     }
 
     @Test

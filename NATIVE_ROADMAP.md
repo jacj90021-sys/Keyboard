@@ -42,7 +42,14 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     typed words so ranking adapts during a session.
 15. `[ ]` **Persist learned words** across restarts (bounded, private storage).
 16. `[ ]` **Locale/language switch** hook for multiple dictionaries.
-17. `[ ]` **Rust integration test** exercising the public API from `tests/`.
+17. `[x]` **Rust integration test** exercising the public API from `tests/`.
+
+## Phase 4 — hardening & tooling
+
+18. `[x]` **Formatting + lints in CI** (`cargo fmt --check`, clippy `-D warnings`).
+19. `[x]` **Pinned toolchain** (`rust-toolchain.toml`).
+20. `[x]` **Multi-ABI builds** (arm64-v8a + x86_64) for emulator coverage.
+21. `[x]` **Engine version query** exposed to Kotlin.
 
 ## Constraints
 

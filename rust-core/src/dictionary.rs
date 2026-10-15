@@ -276,7 +276,9 @@ impl MappedDictionary {
         let mapped_size = stat.st_size as usize;
         if mapped_size < 12 {
             unsafe { libc::close(fd) };
-            return Err(DictionaryError::InvalidFormat("dictionary is too small".to_string()));
+            return Err(DictionaryError::InvalidFormat(
+                "dictionary is too small".to_string(),
+            ));
         }
 
         let mapped_ptr = unsafe {
@@ -292,19 +294,25 @@ impl MappedDictionary {
         unsafe { libc::close(fd) };
 
         if mapped_ptr == libc::MAP_FAILED {
-            return Err(DictionaryError::Mmap("unable to map dictionary".to_string()));
+            return Err(DictionaryError::Mmap(
+                "unable to map dictionary".to_string(),
+            ));
         }
 
         let data = unsafe { std::slice::from_raw_parts(mapped_ptr as *const u8, mapped_size) };
         if &data[0..4] != MAGIC {
             unsafe { libc::munmap(mapped_ptr, mapped_size) };
-            return Err(DictionaryError::InvalidFormat("bad dictionary magic".to_string()));
+            return Err(DictionaryError::InvalidFormat(
+                "bad dictionary magic".to_string(),
+            ));
         }
 
         let version = u32::from_le_bytes(data[4..8].try_into().unwrap_or([0; 4]));
         if version != VERSION {
             unsafe { libc::munmap(mapped_ptr, mapped_size) };
-            return Err(DictionaryError::InvalidFormat("unsupported dictionary version".to_string()));
+            return Err(DictionaryError::InvalidFormat(
+                "unsupported dictionary version".to_string(),
+            ));
         }
 
         let entry_count = u32::from_le_bytes(data[8..12].try_into().unwrap_or([0; 4])) as usize;
@@ -326,23 +334,32 @@ impl MappedDictionary {
         for _ in 0..entry_count {
             if cursor + 4 > mapped_size {
                 unsafe { libc::munmap(mapped_ptr, mapped_size) };
-                return Err(DictionaryError::InvalidFormat("truncated entry header".to_string()));
+                return Err(DictionaryError::InvalidFormat(
+                    "truncated entry header".to_string(),
+                ));
             }
-            let key_len = u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap_or([0; 2])) as usize;
-            let value_len = u16::from_le_bytes(data[cursor + 2..cursor + 4].try_into().unwrap_or([0; 2])) as usize;
+            let key_len =
+                u16::from_le_bytes(data[cursor..cursor + 2].try_into().unwrap_or([0; 2])) as usize;
+            let value_len =
+                u16::from_le_bytes(data[cursor + 2..cursor + 4].try_into().unwrap_or([0; 2]))
+                    as usize;
             cursor += 4;
 
             let key_offset = cursor;
             if key_len == 0 || cursor + key_len > mapped_size {
                 unsafe { libc::munmap(mapped_ptr, mapped_size) };
-                return Err(DictionaryError::InvalidFormat("invalid key bounds".to_string()));
+                return Err(DictionaryError::InvalidFormat(
+                    "invalid key bounds".to_string(),
+                ));
             }
             cursor += key_len;
 
             let value_offset = cursor;
             if cursor + value_len > mapped_size {
                 unsafe { libc::munmap(mapped_ptr, mapped_size) };
-                return Err(DictionaryError::InvalidFormat("invalid value bounds".to_string()));
+                return Err(DictionaryError::InvalidFormat(
+                    "invalid value bounds".to_string(),
+                ));
             }
             cursor += value_len;
 
@@ -363,7 +380,9 @@ impl MappedDictionary {
             let current_key = &data[current.key_offset..current.key_offset + current.key_len];
             if previous_key >= current_key {
                 unsafe { libc::munmap(mapped_ptr, mapped_size) };
-                return Err(DictionaryError::InvalidFormat("dictionary keys are not sorted".to_string()));
+                return Err(DictionaryError::InvalidFormat(
+                    "dictionary keys are not sorted".to_string(),
+                ));
             }
         }
 
@@ -381,20 +400,14 @@ impl MappedDictionary {
     pub fn key_at(&self, index: usize) -> Option<&[u8]> {
         let entry = self.entries.get(index)?;
         Some(unsafe {
-            std::slice::from_raw_parts(
-                self.mapped_ptr.add(entry.key_offset),
-                entry.key_len,
-            )
+            std::slice::from_raw_parts(self.mapped_ptr.add(entry.key_offset), entry.key_len)
         })
     }
 
     pub fn value_at(&self, index: usize) -> Option<&[u8]> {
         let entry = self.entries.get(index)?;
         Some(unsafe {
-            std::slice::from_raw_parts(
-                self.mapped_ptr.add(entry.value_offset),
-                entry.value_len,
-            )
+            std::slice::from_raw_parts(self.mapped_ptr.add(entry.value_offset), entry.value_len)
         })
     }
 
@@ -473,15 +486,14 @@ impl MappedDictionary {
             .collect();
 
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        candidates.into_iter().take(max).map(|(index, _)| index).collect()
+        candidates
+            .into_iter()
+            .take(max)
+            .map(|(index, _)| index)
+            .collect()
     }
 
-    pub fn top_prefixes_contextual(
-        &self,
-        prefix: &[u8],
-        previous: &str,
-        max: usize,
-    ) -> Vec<usize> {
+    pub fn top_prefixes_contextual(&self, prefix: &[u8], previous: &str, max: usize) -> Vec<usize> {
         self.top_prefixes_contextual_ranked(prefix, previous, max, &PromotionTable::new())
     }
 
@@ -508,7 +520,11 @@ impl MappedDictionary {
             .collect();
 
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        candidates.into_iter().take(max).map(|(index, _)| index).collect()
+        candidates
+            .into_iter()
+            .take(max)
+            .map(|(index, _)| index)
+            .collect()
     }
 
     pub fn top_next_words(&self, previous: &str, max: usize) -> Vec<usize> {
@@ -631,7 +647,6 @@ impl MappedDictionary {
             .map(|(index, _, _)| index)
             .collect()
     }
-
 }
 
 fn levenshtein_distance(left: &[u8], right: &[u8]) -> usize {
@@ -706,11 +721,7 @@ mod tests {
         let path = temp_path("exact");
         write_dictionary(
             &path,
-            &[
-                (b"alpha", b"10"),
-                (b"beta", b"20"),
-                (b"gamma", b"30"),
-            ],
+            &[(b"alpha", b"10"), (b"beta", b"20"), (b"gamma", b"30")],
         );
 
         let dictionary = MappedDictionary::load(&path).unwrap();
@@ -762,7 +773,10 @@ mod tests {
             .collect();
         // distance 1: card. distance 2: cash (freq 50) then care (freq 1).
         // Index order would put care first, so this pins the frequency tie-break.
-        assert_eq!(keys, vec![b"card".as_slice(), b"cash".as_slice(), b"care".as_slice()]);
+        assert_eq!(
+            keys,
+            vec![b"card".as_slice(), b"cash".as_slice(), b"care".as_slice()]
+        );
         let _ = std::fs::remove_file(path);
     }
 
@@ -812,13 +826,7 @@ mod tests {
     #[test]
     fn contextual_boost_changes_candidate_order() {
         let path = temp_path("context");
-        write_dictionary(
-            &path,
-            &[
-                (b"moon", b"1"),
-                (b"morning", b"1"),
-            ],
-        );
+        write_dictionary(&path, &[(b"moon", b"1"), (b"morning", b"1")]);
 
         let dictionary = MappedDictionary::load(&path).unwrap();
         let boosted = dictionary.top_prefixes_contextual(b"mo", "good", 2);
@@ -833,13 +841,7 @@ mod tests {
     #[test]
     fn next_word_transition_prefers_boosted_match() {
         let path = temp_path("next-word");
-        write_dictionary(
-            &path,
-            &[
-                (b"moon", b"1000"),
-                (b"morning", b"1"),
-            ],
-        );
+        write_dictionary(&path, &[(b"moon", b"1000"), (b"morning", b"1")]);
 
         let dictionary = MappedDictionary::load(&path).unwrap();
         let next = dictionary.top_next_words("good", 2);
@@ -855,13 +857,7 @@ mod tests {
     #[test]
     fn next_word_without_context_falls_back_to_frequency() {
         let path = temp_path("next-word-freq");
-        write_dictionary(
-            &path,
-            &[
-                (b"moon", b"1000"),
-                (b"morning", b"1"),
-            ],
-        );
+        write_dictionary(&path, &[(b"moon", b"1000"), (b"morning", b"1")]);
 
         let dictionary = MappedDictionary::load(&path).unwrap();
         let next = dictionary.top_next_words("unrelated", 2);

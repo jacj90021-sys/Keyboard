@@ -73,6 +73,9 @@ object NativeEngineBridge {
     private external fun rustDictionaryPromotionCount(): Int
 
     @JvmStatic
+    private external fun rustEngineVersion(): String?
+
+    @JvmStatic
     private external fun rustDictionaryCorrections(typo: String, maxCount: Int): String?
 
     private var loaded = false
@@ -158,6 +161,10 @@ object NativeEngineBridge {
 
     fun dictionaryPromotionCount(): Int =
         if (loaded) safeCall { rustDictionaryPromotionCount() } else 0
+
+    /** Native engine version string, or null when the library is unavailable. */
+    fun engineVersion(): String? =
+        if (loaded) safeCallNullable { rustEngineVersion() } else null
 
     fun loadSampleDictionary(context: Context): Int {
         if (!loaded) tryLoad()
