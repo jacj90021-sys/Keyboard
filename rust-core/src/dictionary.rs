@@ -377,4 +377,40 @@ mod tests {
         assert_eq!(keys, vec![b"card".as_slice(), b"care".as_slice(), b"cash".as_slice()]);
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn rejects_malformed_dictionary_headers() {
+        let path = temp_path("bad-header");
+        std::fs::write(&path, b"NOPE").unwrap();
+        assert!(MappedDictionary::load(&path).is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn accepts_empty_dictionary() {
+        let path = temp_path("empty");
+        let mut data = Vec::new();
+        data.extend_from_slice(b"PLKD");
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        std::fs::write(&path, &data).unwrap();
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        assert_eq!(dictionary.entry_count(), 0);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_zero_length_keys() {
+        let path = temp_path("zero-key");
+        let mut data = Vec::new();
+        data.extend_from_slice(b"PLKD");
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(b"x");
+        std::fs::write(&path, &data).unwrap();
+        assert!(MappedDictionary::load(&path).is_err());
+        let _ = std::fs::remove_file(path);
+    }
 }
