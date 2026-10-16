@@ -3,6 +3,7 @@ package com.example
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -131,10 +132,14 @@ class KeyboardInteractionTest {
     }
 
     @Test
-    fun `suggestion chip inserts its word`() {
+    fun `suggestion strip does not invent words when nothing is typed`() {
         start()
-        compose.onNodeWithText("Yes").performClick()
-        assertTrue("expected a suggestion word, got '$typed'", typed.isNotEmpty())
+        // The engine has no suggestions (no native library in the test JVM) and
+        // nothing has been typed, so the strip must stay silent rather than show
+        // the old hardcoded filler words.
+        listOf("Yes", "Okay", "Thanks", "Awesome").forEach { word ->
+            compose.onAllNodesWithText(word).assertCountEquals(0)
+        }
     }
 
     @Test

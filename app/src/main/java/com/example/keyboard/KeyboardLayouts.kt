@@ -131,7 +131,8 @@ fun QwertyLayoutView(
                 style = KeyStyle.SPECIAL,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1.4f),
-                onClick = onBackspaceClick
+                onClick = onBackspaceClick,
+                onRepeat = onBackspaceClick
             )
         }
 
@@ -289,7 +290,8 @@ fun SymbolsLayoutView(
                 style = KeyStyle.SPECIAL,
                 keyHeight = config.keyHeight,
                 modifier = Modifier.weight(1.3f),
-                onClick = onBackspaceClick
+                onClick = onBackspaceClick,
+                onRepeat = onBackspaceClick
             )
         }
 
@@ -514,7 +516,8 @@ fun FnKeysLayoutView(
                 showPopup = config.showPopups,
                 fontSize = 16,
                 modifier = Modifier.weight(wideWeight),
-                onClick = onBackspaceClick
+                onClick = onBackspaceClick,
+                onRepeat = onBackspaceClick
             )
         }
 

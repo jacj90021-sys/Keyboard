@@ -10,9 +10,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -45,6 +47,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+/**
+ * Hold-to-repeat timing for keys that erase (the backspace). A tap fires once on
+ * press; holding waits [HOLD_INITIAL_DELAY_MS] and then keeps firing every
+ * [HOLD_REPEAT_INTERVAL_MS] until the finger lifts, the way every other keyboard
+ * behaves. Without this the only way to erase was to tap over and over.
+ */
+private const val HOLD_INITIAL_DELAY_MS = 400L
+private const val HOLD_REPEAT_INTERVAL_MS = 55L
 
 enum class KeyStyle {
     REGULAR,
@@ -52,6 +67,72 @@ enum class KeyStyle {
     LIME,
     FN,
     NUMPAD_SWITCH
+}
+
+/**
+ * The gesture modifier for a key.
+ *
+ * Normal keys keep the tap/long-press behaviour. Keys with an [onRepeat] action
+ * (the backspace) delete once as soon as the finger lands and then keep deleting
+ * while it stays down, so holding erases the whole word instead of forcing a tap
+ * per character.
+ */
+@Composable
+private fun keyGestureModifier(
+    interactionSource: MutableInteractionSource,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+    onRepeat: (() -> Unit)?
+): Modifier {
+    // Hold the latest callback without restarting the collector: while a key
+    // repeats, every delete recomposes the keyboard.
+    val tick by rememberUpdatedState(onRepeat ?: onClick)
+
+    // Same shape as FUTO's repeatablyClickableAction: clickable emits
+    // Press/Release into the interaction source, and this collector turns a held
+    // press into an initial action plus a repeating one. The pointer scope itself
+    // forbids general suspension, so all timing lives here.
+    LaunchedEffect(interactionSource, onRepeat) {
+        if (onRepeat == null) return@LaunchedEffect
+        var repeatJob: Job? = null
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> {
+                    tick()
+                    repeatJob?.cancel()
+                    repeatJob = launch {
+                        delay(HOLD_INITIAL_DELAY_MS)
+                        while (isActive) {
+                            tick()
+                            delay(HOLD_REPEAT_INTERVAL_MS)
+                        }
+                    }
+                }
+                is PressInteraction.Release,
+                is PressInteraction.Cancel -> {
+                    repeatJob?.cancel()
+                    repeatJob = null
+                }
+            }
+        }
+    }
+
+    return if (onRepeat != null) {
+        // The action is driven entirely by the interaction collector above, so
+        // the click callback stays empty to avoid deleting twice per tap.
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = {}
+        )
+    } else {
+        Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -69,7 +150,8 @@ fun SoftKey(
     showPopup: Boolean = false,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
-    onSlideDrag: ((Float) -> Unit)? = null
+    onSlideDrag: ((Float) -> Unit)? = null,
+    onRepeat: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -132,12 +214,7 @@ fun SoftKey(
                         }
                     } else Modifier
                 )
-                .combinedClickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick,
-                    onLongClick = onLongClick
-                ),
+                .then(keyGestureModifier(interactionSource, onClick, onLongClick, onRepeat)),
             contentAlignment = Alignment.Center
         ) {
             if (subText != null) {
@@ -187,6 +264,25 @@ fun SoftKey(
     }
 }
 
+/**
+ * The chips the Fn overlay offers. Fn is a deliberate mode (not an empty text
+ * box), so these stay even when nothing has been typed.
+ */
+val fnSuggestions: List<String> = listOf("Esc", "Tab", "Ctrl", "Alt", "Home", "End")
+
+/**
+ * Which chips the suggestion strip shows.
+ *
+ * Real engine suggestions always win, then the Fn keys in Fn mode. With nothing
+ * to show the strip stays EMPTY: it must never invent filler words, which is
+ * what the old hardcoded "Yes / Okay / Thanks / Awesome" fallback did.
+ */
+fun visibleSuggestions(suggestionsOverride: List<String>, isFnMode: Boolean): List<String> = when {
+    suggestionsOverride.isNotEmpty() -> suggestionsOverride
+    isFnMode -> fnSuggestions
+    else -> emptyList()
+}
+
 @Composable
 fun SuggestionsBar(
     palette: KeyboardPalette,
@@ -197,13 +293,7 @@ fun SuggestionsBar(
     onSuggestionClick: (String) -> Unit,
     suggestionsOverride: List<String> = emptyList()
 ) {
-    val defaultSuggestions = remember { listOf("Yes", "Okay", "Thanks", "Awesome") }
-    val fnSuggestions = remember { listOf("Esc", "Tab", "Ctrl", "Alt", "Home", "End") }
-    val suggestions = when {
-        suggestionsOverride.isNotEmpty() -> suggestionsOverride
-        isFnMode -> fnSuggestions
-        else -> defaultSuggestions
-    }
+    val suggestions = visibleSuggestions(suggestionsOverride, isFnMode)
 
     Row(
         modifier = Modifier

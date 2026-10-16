@@ -228,6 +228,19 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     registered while the keyboard is on screen (a background IME has no business
     reading the user's clipboard). The grid's Paste card performs the platform
     paste; the overlay renders the captured history and can clear it.
+58. `[x]` **The strip stops inventing words.** `SuggestionsBar` fell back to a
+     hardcoded `Yes / Okay / Thanks / Awesome` list whenever the engine had
+     nothing to say, so an empty text box showed filler chips. The decision is now
+     `visibleSuggestions()`: real engine output wins, the Fn keys show in Fn mode,
+     and otherwise the strip is empty — the way FUTO's neutral strip is an empty
+     `Spacer`. Covered by 5 new `SuggestionsBarTest` cases.
+59. `[x]` **Hold to erase.** The `⌫` key only had `onClick`, so erasing a word
+     meant tapping once per character. `SoftKey` grew an `onRepeat` action wired to
+     the backspace in every layout: one delete fires on press, then a held finger
+     keeps deleting (400 ms initial delay, 55 ms interval). The timing runs in a
+     `LaunchedEffect` that collects the key's `Press`/`Release` interactions, the
+     same shape as FUTO's `repeatablyClickableAction`, because the pointer-input
+     scope forbids general suspension.
 
 ## Constraints
 
