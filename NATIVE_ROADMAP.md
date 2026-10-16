@@ -241,6 +241,15 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      `LaunchedEffect` that collects the key's `Press`/`Release` interactions, the
      same shape as FUTO's `repeatablyClickableAction`, because the pointer-input
      scope forbids general suspension.
+60. `[x]` **A FUTO-shaped, instant toolbar.** The toolbar grew from 5 to 7 tools
+     (emoji, clipboard, translate, GIF, text editor, mic, overflow) and adopted
+     FUTO's geometry: a 40 dp bar with each icon centred in a 32 dp circular pad
+     instead of a stretched rounded rectangle, so all seven fit with no sliding
+     (≈49 dp per slot at 360 dp wide). The mic moved out of the All Actions
+     overlay onto the bar, wired to the same `voice` action the grid uses. The bar
+     also lost its `AnimatedVisibility` slide+fade: a plain `if` swaps it in the
+     same frame, like FUTO, which also stops the keyboard being re-measured on
+     every animation frame.
 
 ## Constraints
 

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -361,17 +362,22 @@ fun FloatingToolbar(
     palette: KeyboardPalette,
     onToolClick: (OverlayView) -> Unit,
     onMoreClick: () -> Unit,
+    onAction: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // FUTO-shaped bar: a fixed 40.dp height and equal-width slots, so all seven
+    // tools fit with no sliding. On a 360.dp phone each slot is ~47.dp, the same
+    // order as FUTO's ~48.dp cells.
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .height(40.dp)
+            .padding(horizontal = 4.dp)
             .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
             .background(palette.paper)
             .border(1.dp, palette.line, RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         ToolbarIconButton(
             icon = Icons.Default.Face,
@@ -402,6 +408,20 @@ fun FloatingToolbar(
             onClick = { onToolClick(OverlayView.NONE) }
         )
         ToolbarIconButton(
+            icon = Icons.Default.Edit,
+            palette = palette,
+            modifier = Modifier.weight(1f),
+            testTag = "tool:text_editor",
+            onClick = { onAction("text_editor") }
+        )
+        ToolbarIconButton(
+            icon = Icons.Default.Mic,
+            palette = palette,
+            modifier = Modifier.weight(1f),
+            testTag = "tool:voice",
+            onClick = { onAction("voice") }
+        )
+        ToolbarIconButton(
             icon = Icons.Default.MoreHoriz,
             palette = palette,
             isSpecial = true,
@@ -423,10 +443,17 @@ fun ToolbarIconButton(
 ) {
     Box(
         modifier = modifier
-            .height(35.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (isSpecial) palette.paperDeep else palette.keyBg)
-            .border(1.dp, palette.line, RoundedCornerShape(10.dp))
+            .fillMaxHeight()
+            .drawBehind {
+                // FUTO draws a round pad, not a stretched rounded rectangle: a
+                // 32.dp circle centred in the 40.dp slot, so seven fit side by
+                // side without sliding.
+                drawCircle(
+                    color = if (isSpecial) palette.paperDeep else palette.keyBg,
+                    radius = 16.dp.toPx()
+                )
+            }
+            .clip(CircleShape)
             .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },

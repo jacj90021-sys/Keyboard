@@ -232,12 +232,11 @@ fun PaperLimeKeyboardView(
             .border(1.dp, palette.line)
             .padding(horizontal = 4.dp, vertical = 4.dp)
     ) {
-        // Floating Toolbar Overlay - placed at the top above suggestions
-        AnimatedVisibility(
-            visible = toolbarVisible,
-            enter = slideInVertically() + fadeIn(),
-            exit = slideOutVertically() + fadeOut()
-        ) {
+        // Floating Toolbar Overlay - placed at the top above suggestions.
+        // Swapped in with a plain `if`, not AnimatedVisibility: FUTO's bar appears
+        // in the same frame the chevron is tapped, and our old slide+fade (~300ms
+        // spring) also re-measured the whole keyboard on every frame while it ran.
+        if (toolbarVisible) {
             FloatingToolbar(
                 palette = palette,
                 onToolClick = { targetOverlay ->
@@ -250,7 +249,8 @@ fun PaperLimeKeyboardView(
                     } else {
                         overlay = if (overlay == OverlayView.ALL_ACTIONS) OverlayView.NONE else OverlayView.ALL_ACTIONS
                     }
-                }
+                },
+                onAction = { onAction(it) }
             )
         }
 
