@@ -3,6 +3,7 @@ use std::ffi::CString;
 use std::path::Path;
 
 use crate::automaton::Automaton;
+use crate::touch;
 
 const MAGIC: &[u8; 4] = b"PLKD";
 const VERSION: u32 = 1;
@@ -238,8 +239,19 @@ fn plausible_correction(prefix: &[u8], candidate: &[u8], distance: usize) -> boo
         return true;
     }
     let shares_first = prefix.first() == candidate.first();
-    shares_first || candidate.len() >= 5
+    // A two-edit match also reads as a typo fix when *both* edits are plausible
+    // fat-finger slips on the board, even for a short word whose opening letter
+    // changed — the thumb simply drifted.
+    shares_first
+        || candidate.len() >= 5
+        || touch::spatial_distance(prefix, candidate) <= PLAUSIBLE_SLIP_BUDGET
 }
+
+/// Total layout slip below which a two-edit candidate still reads as a fat
+/// finger rather than an unrelated word. Two adjacent-key substitutions cost
+/// about `0.67`; a single dropped letter already costs `1.0`, so this admits
+/// genuine neighbour slips and little else.
+const PLAUSIBLE_SLIP_BUDGET: f32 = 1.0;
 
 /// Smallest possible on-disk size of one entry: 4-byte length header plus the
 /// required (non-empty) key. Used to bound `entry_count` before allocating.
@@ -832,7 +844,8 @@ impl MappedDictionary {
     }
 
     /// Close dictionary matches as `(entry index, edit distance, score)`, sorted
-    /// best-first: smallest distance, then highest score, then dictionary order.
+    /// best-first: smallest distance, then highest score, then the smallest
+    /// layout slip (see [`crate::touch`]), then dictionary order.
     /// Shared by the corrections API and by suggestion fill-in.
     fn ranked_close_matches(
         &self,
@@ -842,25 +855,32 @@ impl MappedDictionary {
     ) -> Vec<(usize, usize, u64)> {
         // The automaton reports matched words (its states carry no entry ids);
         // the sorted entry array maps each one back in O(log n).
-        let mut matches: Vec<(usize, usize, u64)> = Vec::new();
+        let mut matches: Vec<(usize, usize, u64, f32)> = Vec::new();
         self.automaton.fuzzy(typo, max_distance, |word, distance| {
             if let Some(index) = self.exact_match(word) {
                 matches.push((
                     index,
                     distance,
                     self.frequency_at(index) + promotions.boost(word),
+                    touch::spatial_distance(typo, word),
                 ));
             }
         });
 
         // Prefer the smallest edit distance; break ties by frequency so a common
-        // word beats a rare one, then fall back to dictionary order for stability.
+        // word beats a rare one, then by how plausible the mix-up is on the
+        // board (two equally common, equally distant words — prefer the one the
+        // thumb could have produced), and finally dictionary order for stability.
         matches.sort_by(|a, b| {
             a.1.cmp(&b.1)
                 .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
                 .then_with(|| a.0.cmp(&b.0))
         });
         matches
+            .into_iter()
+            .map(|(index, distance, score, _)| (index, distance, score))
+            .collect()
     }
 
     /// Decide the single best auto-replacement for a just-typed word, or `None`
@@ -1644,5 +1664,33 @@ mod tests {
         assert_eq!(restored.load_from_file(&path).unwrap(), 1);
         assert_eq!(restored.boost(b"keyboard"), 100);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn corrections_prefer_the_neighbouring_key_when_otherwise_tied() {
+        let path = temp_path("layout-tie");
+        // Both are one substitution from "qe", equally frequent and equally far
+        // in edit distance. Only the board can separate them: "w" sits next to
+        // "e", while "p" is at the far end of the row.
+        write_dictionary(&path, &[(b"qp", b"50"), (b"qw", b"50")]);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        let matches = dictionary.nearest_words(b"qe", 4, 2);
+        let keys: Vec<&[u8]> = matches
+            .iter()
+            .map(|&index| dictionary.key_at(index).unwrap())
+            .collect();
+        assert_eq!(keys, vec![b"qw".as_slice(), b"qp".as_slice()]);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn two_slips_on_neighbouring_keys_still_read_as_a_typo() {
+        // "ad" mistyped as "sf": both letters landed one key to the right, so
+        // two edits is still a plausible fat finger even though the opening
+        // letter changed and the word is short.
+        assert!(plausible_correction(b"ad", b"sf", 2));
+        // "az" mistyped as "pl": the letters came from opposite corners.
+        assert!(!plausible_correction(b"az", b"pl", 2));
     }
 }

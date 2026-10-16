@@ -7,10 +7,12 @@ mod automaton;
 mod dictionary;
 mod gesture;
 mod inference;
+mod touch;
 pub use automaton::Automaton;
 pub use dictionary::{DictionaryError, MappedDictionary, PromotionTable};
 pub use gesture::{rank_stroke, trace_cost, Cell, Trace, TraceVerdict, TraceWeights};
 pub use inference::{BackendKind, MlEngine, RankContext, RuntimeReport};
+pub use touch::{estimate_pitch, key_gap, qwerty_position, slip_cost, spatial_distance};
 
 // Transparency: FFI boundary requires explicitly scoped unsafe attributes/blocks.
 
@@ -610,6 +612,22 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustD
     }
 }
 
+/// Swipe tuning for a concrete board.
+///
+/// Every gate in the decoder is a fraction of the *key pitch* (centre-to-centre
+/// spacing of neighbouring keys), so the pitch has to come from the board that
+/// was actually handed in rather than a constant: the same 36 dp key is ~108 px
+/// on a 3x phone and ~72 px on a 2x one. [`touch::estimate_pitch`] recovers it
+/// from the grid; if the grid has no horizontal neighbours to measure, the
+/// default calibration stands and the decoder still behaves as before.
+fn trace_weights_for(grid: &[Option<Cell>; 256]) -> gesture::TraceWeights {
+    let mut weights = gesture::TraceWeights::default();
+    if let Some(pitch) = touch::estimate_pitch(grid) {
+        weights.key_pitch = pitch;
+    }
+    weights
+}
+
 /// Gesture decode boundary.
 ///
 /// `stroke_xy` is a flat `[x0,y0,x1,y1,...]` buffer of finger samples and
@@ -686,7 +704,7 @@ pub extern "system" fn Java_com_example_keyboard_native_NativeEngineBridge_rustG
         dictionary,
         &promotions,
         |b| grid[b as usize],
-        gesture::TraceWeights::default(),
+        trace_weights_for(&grid),
         max,
     );
 

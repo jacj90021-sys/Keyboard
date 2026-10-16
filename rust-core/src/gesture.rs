@@ -12,6 +12,9 @@
 //!   previous key — not merely grazed while aiming elsewhere.
 //! * **Backtracking + stray.** Moving against the key-to-key direction, or
 //!   wandering off the line between two claimed keys, adds super-linear cost.
+//! * **Forgiving ends.** The first and last keys are matched against a *window*
+//!   of samples, and a short lead-in or trailing hook is priced instead of
+//!   rejected — fingers are still moving when they land and lift.
 //!
 //! It is a self-contained value-type module: callers hand it a key grid and a
 //! finger stroke and get back ranked dictionary indices.
@@ -77,6 +80,14 @@ pub struct TraceWeights {
     pub backtrack_penalty: f32,
     /// Cost units subtracted for a clean start/end, to favour exact taps.
     pub bookend_grace: f32,
+    /// Longest finger "hook" tolerated before the first key or after the last
+    /// one, as a multiple of the key pitch. People lead into a swipe already
+    /// moving and curl away as they lift; a little of that must not veto an
+    /// otherwise clean word.
+    pub max_hook: f32,
+    /// Cost charged per pitch of tolerated hook, so a clean stroke still beats a
+    /// sloppy one that needs the same keys.
+    pub hook_pull: f32,
 }
 
 impl Default for TraceWeights {
@@ -86,9 +97,16 @@ impl Default for TraceWeights {
             proximity_pull: 1.0,
             backtrack_penalty: 3.0,
             bookend_grace: 8.0,
+            max_hook: 2.0,
+            hook_pull: 2.0,
         }
     }
 }
+
+/// How many opening samples are searched for the first key's best approach.
+/// Three is enough to cover the lead-in of a normal swipe without letting the
+/// search wander into the middle of the stroke.
+const START_WINDOW: usize = 3;
 
 /// Squared Euclidean distance between two samples.
 #[inline]
@@ -96,6 +114,20 @@ fn sep2(a: Trace, b: Trace) -> f32 {
     let dx = a.x - b.x;
     let dy = a.y - b.y;
     dx * dx + dy * dy
+}
+
+/// Length of the finger path between sample `from` and sample `to` (both
+/// indices into `stroke`), walking sample to sample. Used to measure the lead-in
+/// and trailing hook that sit outside the claimed keys.
+fn arc_length(stroke: &[Trace], from: usize, to: usize) -> f32 {
+    if to <= from || stroke.len() < 2 {
+        return 0.0;
+    }
+    let mut total = 0.0;
+    for index in from..to.min(stroke.len() - 1) {
+        total += sep2(stroke[index], stroke[index + 1]).sqrt();
+    }
+    total
 }
 
 /// Shortest distance from a point to the closed segment `a -> b`.
@@ -250,17 +282,35 @@ pub fn trace_cost(stroke: &[Trace], anchors: &[Cell], knob: TraceWeights) -> Tra
         };
     }
 
-    // First key: the finger must begin near it.
-    let open_gap = sep2(stroke[0], anchors[0].centre).sqrt();
-    if open_gap > pitch * 0.45 {
+    // First key: the finger must begin near it. The opening samples are searched
+    // rather than trusting sample zero, so a short lead-in — the finger already
+    // moving when the first sample lands — is forgiven rather than vetoing the
+    // whole word.
+    let mut open_gap = f32::MAX;
+    let mut open_at = 0usize;
+    for (index, sample) in stroke.iter().take(START_WINDOW).enumerate() {
+        let gap = sep2(*sample, anchors[0].centre).sqrt();
+        if gap < open_gap {
+            open_gap = gap;
+            open_at = index;
+        }
+    }
+    if open_gap > pitch * 0.9 {
         return bookend;
     }
     let mut total = knob.proximity_pull * open_gap;
+    let lead = arc_length(stroke, 0, open_at);
+    if lead > pitch * knob.max_hook {
+        return bookend;
+    }
+    total += knob.hook_pull * lead / pitch;
 
     // Middle keys: each must be approached, and hops are charged for moving
-    // against the key direction and for straying off the line.
-    let mut cursor = 0usize;
-    let mut prev_claim = 0usize;
+    // against the key direction and for straying off the line. The walk starts
+    // at the sample where the finger actually reached the first key, so the
+    // lead-in is not also charged as a stray.
+    let mut cursor = open_at;
+    let mut prev_claim = open_at;
     let mut prev_centre = anchors[0].centre;
     for anchor in anchors.iter().take(anchors.len() - 1).skip(1) {
         let centre = anchor.centre;
@@ -280,17 +330,24 @@ pub fn trace_cost(stroke: &[Trace], anchors: &[Cell], knob: TraceWeights) -> Tra
         cursor = claim;
     }
 
-    // Last key: the finger must finish near it, and the tail must not wander.
+    // Last key: the finger must approach it after the previous key. The closest
+    // approach is searched rather than measured from the final sample, so a
+    // trailing hook — the finger curling away as it lifts — no longer vetoes the
+    // word. Whatever lies past the last key is charged as hook, not as stray.
     let last_centre = anchors[anchors.len() - 1].centre;
-    let close_gap = sep2(stroke[last_sample], last_centre).sqrt();
-    if close_gap > pitch * 0.9 {
+    let Some((close_claim, close_gap)) = closest_approach(
+        stroke,
+        last_centre,
+        cursor.min(last_sample - 1),
+        pitch * 0.9,
+    ) else {
         return bookend;
-    }
-    total += knob.proximity_pull * close_gap;
+    };
+    total += knob.proximity_pull * close_gap.powf(1.5);
     total += backtrack_cost(
         stroke,
         prev_claim,
-        last_sample,
+        close_claim,
         prev_centre,
         last_centre,
         knob,
@@ -298,7 +355,7 @@ pub fn trace_cost(stroke: &[Trace], anchors: &[Cell], knob: TraceWeights) -> Tra
     let tail_stray = stray_between(
         stroke,
         prev_claim,
-        last_sample,
+        close_claim,
         prev_centre,
         last_centre,
         pitch * 0.7,
@@ -307,6 +364,12 @@ pub fn trace_cost(stroke: &[Trace], anchors: &[Cell], knob: TraceWeights) -> Tra
         return bookend;
     }
     total += tail_stray;
+
+    let hook = arc_length(stroke, close_claim, last_sample);
+    if hook > pitch * knob.max_hook {
+        return bookend;
+    }
+    total += knob.hook_pull * hook / pitch;
 
     // Bookend grace: nudge clean start/end matches ahead of sloppy ones.
     if started {
@@ -568,6 +631,67 @@ mod tests {
         ];
         let knob = TraceWeights::default();
         let verdict = trace_cost(&stroke, &anchors_for(b"adc"), knob);
+        assert_eq!(verdict.cost, f32::MAX);
+    }
+
+    #[test]
+    fn trailing_hook_after_the_last_key_is_tolerated() {
+        // Swipe a -> b -> c, then curl upward as the finger lifts. The hook is
+        // finger-overrun, not a different word, so "abc" must still score.
+        // (Before the ends were made forgiving this was rejected because the
+        // final sample sat more than a pitch away from 'c'.)
+        let stroke = vec![
+            Trace::new(0.0, 0.0),
+            Trace::new(100.0, 0.0),
+            Trace::new(200.0, 0.0),
+            Trace::new(200.0, 120.0),
+        ];
+        let verdict = trace_cost(&stroke, &anchors_for(b"abc"), TraceWeights::default());
+        assert!(
+            verdict.cost.is_finite(),
+            "a trailing hook must not veto the word"
+        );
+    }
+
+    #[test]
+    fn a_hook_long_enough_to_be_another_swipe_is_still_rejected() {
+        // The same hook, but long enough that the finger was travelling to a
+        // key the word does not contain.
+        let stroke = vec![
+            Trace::new(0.0, 0.0),
+            Trace::new(100.0, 0.0),
+            Trace::new(200.0, 0.0),
+            Trace::new(200.0, 400.0),
+        ];
+        let verdict = trace_cost(&stroke, &anchors_for(b"abc"), TraceWeights::default());
+        assert_eq!(verdict.cost, f32::MAX);
+    }
+
+    #[test]
+    fn short_lead_in_before_the_first_key_is_tolerated() {
+        // The finger is already moving when the first sample lands, 0.6 pitch
+        // above the opening key.
+        let stroke = vec![
+            Trace::new(0.0, 60.0),
+            Trace::new(0.0, 0.0),
+            Trace::new(100.0, 0.0),
+            Trace::new(200.0, 0.0),
+        ];
+        let verdict = trace_cost(&stroke, &anchors_for(b"abc"), TraceWeights::default());
+        assert!(
+            verdict.cost.is_finite(),
+            "a short lead-in should not reject the word"
+        );
+    }
+
+    #[test]
+    fn a_start_far_from_the_first_key_is_still_rejected() {
+        let stroke = vec![
+            Trace::new(0.0, 300.0),
+            Trace::new(100.0, 0.0),
+            Trace::new(200.0, 0.0),
+        ];
+        let verdict = trace_cost(&stroke, &anchors_for(b"abc"), TraceWeights::default());
         assert_eq!(verdict.cost, f32::MAX);
     }
 }

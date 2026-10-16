@@ -261,6 +261,21 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      The window opens in the same frame the mic is tapped, commits the transcript,
      then closes itself after a short "Added" beat. A committed-but-blank result
      is an error, never a silent no-op. Covered by 6 new `VoiceInputTest` cases.
+62. `[x]` **A touch-geometry model in the Rust core.** Correction was purely
+     textual: the engine preferred the *edit* nearest by letter, never by key.
+     A new `touch` module puts the board itself into the engine. `qwerty_position`
+     places every letter on an abstract three-row board measured in *key pitches*,
+     so screen size, density and row padding drop out and one set of constants
+     fits any phone. `slip_cost` prices a substitution by how far apart the two
+     keys actually are (adjacent `≈0.33`, opposite corners `1.0`), and
+     `spatial_distance` is a Damerau-Levenshtein distance that uses it, with a
+     cheap fixed charge for a swapped neighbour pair ("teh"/"the"). The swipe
+     decoder also stopped punishing the finger for moving: the first and last
+     keys are now matched against a *window* of samples, and a short lead-in or
+     trailing hook is charged as cost rather than vetoing the word — the old
+     code measured only the very first and very last sample, so a finger still
+     curling as it lifted could reject a perfectly good swipe. Covered by 5 new
+     `touch` cases, 4 new `gesture` cases and 2 new `dictionary` cases.
 
 ## Constraints
 
