@@ -1,6 +1,8 @@
 package com.example.settings
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.*
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
@@ -25,8 +27,11 @@ fun KeyboardApp(
     val context = LocalContext.current
 
     LaunchedEffect(context) {
-        NativeEngineBridge.tryLoad()
-        NativeEngineBridge.loadSampleDictionary(context)
+        // Off the frame: engine setup maps and validates the dictionary.
+        withContext(Dispatchers.IO) {
+            NativeEngineBridge.tryLoad()
+            NativeEngineBridge.loadSampleDictionary(context)
+        }
     }
     var page by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()

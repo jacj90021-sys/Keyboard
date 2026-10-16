@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
@@ -50,13 +52,19 @@ fun PaperLimeKeyboardView(
     val context = LocalContext.current
     val density = LocalDensity.current
     val learnedWordsFile = remember(context) { File(context.filesDir, "learned_words.tsv") }
-    // Promote a word the user accepted or typed correctly, and persist the table
-    // so the engine keeps adapting across sessions.
+    // Promote a word the user accepted or typed correctly. The engine keeps the
+    // authoritative table in memory (microseconds); persisting it is coalesced
+    // onto a background dispatcher so a committed word never does a file write
+    // on the frame.
     val learnWord: (String) -> Unit = { word ->
         if (word.isNotBlank()) {
             NativeEngineBridge.dictionaryPromote(word)
-            NativeEngineBridge.dictionarySavePromotions(learnedWordsFile.absolutePath)
+            LearningPersistence.scheduleSave(learnedWordsFile)
         }
+    }
+    // Guarantee a final save when the keyboard disappears.
+    DisposableEffect(learnedWordsFile) {
+        onDispose { LearningPersistence.flush(learnedWordsFile) }
     }
 
     var currentPrefix by remember { mutableStateOf("") }
@@ -66,27 +74,47 @@ fun PaperLimeKeyboardView(
     // mapped a dictionary, so the host-JVM/test path is completely unaffected.
     var engineReady by remember { mutableStateOf(NativeEngineBridge.isLoaded()) }
     var boardSize by remember { mutableStateOf(IntSize.Zero) }
-    val dictionaryCandidates = remember(currentPrefix, lastCommittedWord) {
-        SuggestionPlanner.candidates(
-            prefix = currentPrefix,
-            previousWord = lastCommittedWord,
-            suggest = NativeEngineBridge::dictionarySuggest
-        )
+    // Suggestions run on a background dispatcher: the query used to resolve
+    // during composition, blocking the frame (next-word ranking alone cost ~9 ms
+    // on the first keystroke of every word). produceState restarts when the
+    // prefix changes, which also debounces a fast typist's intermediate states.
+    val dictionaryCandidates by produceState(
+        initialValue = emptyList<String>(),
+        currentPrefix,
+        lastCommittedWord
+    ) {
+        value = withContext(Dispatchers.Default) {
+            SuggestionPlanner.candidates(
+                prefix = currentPrefix,
+                previousWord = lastCommittedWord,
+                suggest = NativeEngineBridge::dictionarySuggest
+            )
+        }
+    }
+    // Prefetch the autocorrect verdict while the word is being typed, so swinging
+    // to the next word (space) never runs the correction scan on the frame.
+    val pendingCorrection by produceState(
+        initialValue = null as String?,
+        currentPrefix,
+        prefs.autoCorrect
+    ) {
+        value = withContext(Dispatchers.Default) {
+            if (prefs.autoCorrect && currentPrefix.length >= 3 && NativeEngineBridge.isLoaded()) {
+                NativeEngineBridge.dictionaryAutocorrect(currentPrefix)?.takeIf { it != currentPrefix }
+            } else {
+                null
+            }
+        }
     }
     val trackedCommit: (String) -> Unit = { text ->
         currentPrefix = when {
             text == " " -> {
                 if (currentPrefix.isNotBlank()) {
-                    // Autocorrect on word commit: the engine decides whether the
-                    // typed word should be swapped for a likely correction. The
-                    // user can turn this off from Settings or the AutoCorrect
-                    // action card.
-                    val correction =
-                        if (prefs.autoCorrect) {
-                            NativeEngineBridge.dictionaryAutocorrect(currentPrefix)
-                        } else {
-                            null
-                        }
+                    // Autocorrect on word commit: use the verdict prefetched
+                    // while typing (see `pendingCorrection`) instead of blocking
+                    // the frame on the correction scan. The user can turn this
+                    // off from Settings or the AutoCorrect action card.
+                    val correction = pendingCorrection
                     if (correction != null && correction != currentPrefix) {
                         val typedLength =
                             if (rawPrefix.isNotEmpty()) rawPrefix.length else currentPrefix.length
@@ -126,10 +154,15 @@ fun PaperLimeKeyboardView(
     }
 
     LaunchedEffect(context) {
-        NativeEngineBridge.tryLoad()
-        NativeEngineBridge.loadSampleDictionary(context)
-        // Restore words this user has taught the engine in earlier sessions.
-        NativeEngineBridge.dictionaryLoadPromotions(learnedWordsFile.absolutePath)
+        // The first show maps the dictionary, validates it, builds the automaton
+        // and copies the asset (~100 ms on a fast host, more on a phone). Keep it
+        // off the frame so opening the keyboard is never blocked by engine setup.
+        withContext(Dispatchers.IO) {
+            NativeEngineBridge.tryLoad()
+            NativeEngineBridge.loadSampleDictionary(context)
+            // Restore words this user has taught the engine in earlier sessions.
+            NativeEngineBridge.dictionaryLoadPromotions(learnedWordsFile.absolutePath)
+        }
         engineReady = NativeEngineBridge.isLoaded()
     }
 

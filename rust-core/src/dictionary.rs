@@ -27,7 +27,15 @@ pub struct MappedDictionary {
     mapped_size: usize,
     entries: Vec<EntryIndex>,
     automaton: Automaton,
+    /// The most frequent entries, highest first, precomputed once at load.
+    /// Next-word suggestions fill their spare slots from here instead of
+    /// re-ranking all entries on every keystroke.
+    top_frequency: Vec<usize>,
 }
+
+/// How many entries the precomputed frequency pool keeps. Comfortably larger
+/// than any UI suggestion cap; callers asking for more fall back to a full scan.
+const TOP_FREQUENCY_POOL: usize = 64;
 
 static CONTEXT_TRANSITIONS: &[(&str, &str, u32)] = &[
     // determiners / particles
@@ -196,6 +204,17 @@ fn context_boost(previous: &[u8], candidate: &[u8]) -> u64 {
         })
         .map(|index| table[index].2)
         .unwrap_or(0)
+}
+
+/// The bigram rows whose left word is `previous`, as one contiguous slice (the
+/// table is sorted by left, then right). This turns "find every transition from
+/// this word" into a range lookup instead of one binary search per dictionary
+/// entry, which is what made next-word ranking so expensive.
+fn context_rows_for(previous: &[u8]) -> &'static [(&'static str, &'static str, u64)] {
+    let table = context_table();
+    let start = table.partition_point(|row| row.0.as_bytes() < previous);
+    let end = table.partition_point(|row| row.0.as_bytes() <= previous);
+    &table[start..end]
 }
 
 /// Parse a stored value as a non-negative frequency. Values are advisory: a
@@ -512,11 +531,30 @@ impl MappedDictionary {
             Automaton::build(&keys)
         };
 
+        // Precompute a small "most frequent words" pool. Ranking the whole
+        // dictionary for every next-word hint was the single most expensive
+        // thing on the typing path (see `top_next_words_ranked`).
+        let mut ranked_by_frequency: Vec<(usize, u64)> = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let raw = &data[entry.value_offset..entry.value_offset + entry.value_len];
+                (index, frequency_value(raw))
+            })
+            .collect();
+        ranked_by_frequency.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        let top_frequency: Vec<usize> = ranked_by_frequency
+            .into_iter()
+            .take(TOP_FREQUENCY_POOL)
+            .map(|(index, _)| index)
+            .collect();
+
         Ok(Self {
             mapped_ptr: mapped_ptr as *mut u8,
             mapped_size,
             entries,
             automaton,
+            top_frequency,
         })
     }
 
@@ -664,18 +702,53 @@ impl MappedDictionary {
         max: usize,
         promotions: &PromotionTable,
     ) -> Vec<usize> {
+        if max == 0 {
+            return Vec::new();
+        }
         let previous_bytes = previous.as_bytes();
         // Rank by context first, then frequency. A transition hit should beat a
         // merely common word, otherwise next-word hints would just echo the most
         // frequent entries ("the", "be", ...) regardless of what was typed.
-        let mut candidates: Vec<(usize, u64, u64)> = (0..self.entry_count())
-            .map(|index| {
-                let key = self.key_at(index).unwrap_or_default();
-                let boost = context_boost(previous_bytes, key);
-                let frequency = self.frequency_at(index) + promotions.boost(key);
-                (index, boost, frequency)
-            })
-            .collect();
+        //
+        // This used to scan AND sort every entry (~9 ms on a 47k-word file) on
+        // the first keystroke of each word. Context hits now come straight from
+        // the small bigram table and the spare slots from the precomputed
+        // frequency pool, so the cost no longer scales with dictionary size.
+        let mut candidates: Vec<(usize, u64, u64)> = Vec::with_capacity(max);
+        for (_, right, boost) in context_rows_for(previous_bytes) {
+            if let Some(index) = self.exact_match(right.as_bytes()) {
+                let frequency = self.frequency_at(index) + promotions.boost(right.as_bytes());
+                candidates.push((index, *boost, frequency));
+            }
+        }
+        for &index in &self.top_frequency {
+            if candidates.len() >= max {
+                break;
+            }
+            if candidates.iter().any(|(existing, _, _)| *existing == index) {
+                continue;
+            }
+            let key = self.key_at(index).unwrap_or_default();
+            let frequency = self.frequency_at(index) + promotions.boost(key);
+            candidates.push((index, 0, frequency));
+        }
+
+        // A caller asking for more slots than the pool holds still gets the
+        // exact full-scan answer, mirroring the previous behaviour.
+        if max > self.top_frequency.len() && candidates.len() < max {
+            let seen: std::collections::HashSet<usize> =
+                candidates.iter().map(|(index, _, _)| *index).collect();
+            candidates.extend(
+                (0..self.entry_count())
+                    .filter(|index| !seen.contains(index))
+                    .map(|index| {
+                        let key = self.key_at(index).unwrap_or_default();
+                        let boost = context_boost(previous_bytes, key);
+                        let frequency = self.frequency_at(index) + promotions.boost(key);
+                        (index, boost, frequency)
+                    }),
+            );
+        }
 
         candidates.sort_by(|a, b| {
             b.1.cmp(&a.1)
@@ -1190,6 +1263,32 @@ mod tests {
             .map(|&index| dictionary.key_at(index).unwrap())
             .collect();
         assert_eq!(keys, vec![b"moon".as_slice(), b"morning".as_slice()]);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn next_word_beyond_the_pool_falls_back_to_a_full_scan() {
+        let path = temp_path("next-word-large-max");
+        let owned: Vec<(Vec<u8>, Vec<u8>)> = (0..100)
+            .map(|i| {
+                (
+                    format!("word{i:03}").into_bytes(),
+                    i.to_string().into_bytes(),
+                )
+            })
+            .collect();
+        let refs: Vec<(&[u8], &[u8])> = owned
+            .iter()
+            .map(|(key, value)| (key.as_slice(), value.as_slice()))
+            .collect();
+        write_dictionary(&path, &refs);
+
+        let dictionary = MappedDictionary::load(&path).unwrap();
+        // Asking for more slots than the precomputed pool holds must still give
+        // the exact, full-scan answer: every entry, most frequent first.
+        let next = dictionary.top_next_words("unrelated", 100);
+        assert_eq!(next.len(), 100);
+        assert_eq!(dictionary.key_at(next[0]).unwrap(), b"word099".as_slice());
         let _ = std::fs::remove_file(path);
     }
 

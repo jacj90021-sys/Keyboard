@@ -109,6 +109,9 @@ object NativeEngineBridge {
     @JvmStatic
     private external fun rustMlRank(prefix: String, previous: String, maxCount: Int): String?
 
+    // Written on a background dispatcher during engine setup, read from the UI
+    // thread; volatile so the load is visible without a lock.
+    @Volatile
     private var loaded = false
 
     fun isLoaded(): Boolean = loaded
