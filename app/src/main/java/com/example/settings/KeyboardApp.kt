@@ -10,11 +10,7 @@ import com.example.keyboard.native.NativeEngineBridge
 
 private enum class AppScreen { Onboarding, Personalize, Settings }
 
-private val placeholderTitles = mapOf(
-    "clipboard" to "Clipboard",
-    "emoji" to "Emoji & media",
-    "premium" to "Premium"
-)
+private val placeholderTitles = emptyMap<String, String>()
 
 @Composable
 fun KeyboardApp(
@@ -85,6 +81,9 @@ fun KeyboardApp(
                 "other" -> OtherPage { page = null }
                 "help" -> HelpPage { page = null }
                 "about" -> AboutPage { page = null }
+                "clipboard" -> ClipboardPage(prefs, repository) { page = null }
+                "emoji" -> EmojiPage { page = null }
+                "premium" -> PremiumPage { page = null }
                 "appearance" -> PersonalizeScreen(
                     prefs = prefs,
                     repository = repository,

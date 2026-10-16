@@ -332,12 +332,19 @@ class PaperLimeInputMethodService : InputMethodService(),
         runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME) }
         // Only watch the clipboard while the keyboard is actually on screen: a
         // background IME has no business reading what the user copies.
-        if (!clipboardListenerRegistered) {
+        if (_prefs.value.clipboardHistory && !clipboardListenerRegistered) {
             runCatching {
                 getSystemService(ClipboardManager::class.java)
                     ?.addPrimaryClipChangedListener(clipboardListener)
                 clipboardListenerRegistered = true
             }.onFailure { Log.e(TAG, "clipboard listen failed", it) }
+        }
+        if (!_prefs.value.clipboardHistory && clipboardListenerRegistered) {
+            runCatching {
+                getSystemService(ClipboardManager::class.java)
+                    ?.removePrimaryClipChangedListener(clipboardListener)
+            }.onFailure { Log.e(TAG, "clipboard stop failed", it) }
+            clipboardListenerRegistered = false
         }
     }
 

@@ -12,13 +12,20 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
 import com.example.keyboard.allActionCards
+import com.example.keyboard.emojiCategories
+import com.example.keyboard.KeyboardPrefs
+import com.example.keyboard.KeyboardPrefsRepository
 import com.example.keyboard.native.NativeEngineBridge
 
 /**
@@ -185,6 +192,68 @@ fun HelpPage(onBack: () -> Unit) {
                 subtitle = "Version and engine details",
                 trailingValue = BuildConfig.VERSION_NAME
             )
+        }
+    }
+}
+
+@Composable
+fun ClipboardPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+
+    PageScaffold(title = "Clipboard", onBack = onBack) {
+        SwitchCard {
+            SwitchRow(
+                title = "Clipboard history",
+                subtitle = "Capture a bounded, de-duplicated history while typing",
+                checked = prefs.clipboardHistory,
+                onToggle = { scope.launch { repository.setBool("clipboardHistory", !prefs.clipboardHistory) } }
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+        Label("Privacy")
+        SwitchCard {
+            Hint("History is only captured while the keyboard is visible and is kept on this device. No sync or cloud access.")
+        }
+    }
+}
+
+@Composable
+fun EmojiPage(onBack: () -> Unit) {
+    PageScaffold(title = "Emoji & media", onBack = onBack) {
+        Label("Available emoji categories")
+        SwitchCard {
+            emojiCategories.forEachIndexed { index, cat ->
+                if (index > 0) Divider()
+                SettingRow(
+                    icon = Icons.Default.Face,
+                    title = cat.first,
+                    subtitle = "${cat.second.size} emojis"
+                )
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Label("Notes")
+        SwitchCard {
+            Hint("The emoji picker is available in the keyboard's toolbar and in the All Actions grid.")
+        }
+    }
+}
+
+@Composable
+fun PremiumPage(onBack: () -> Unit) {
+    PageScaffold(title = "Premium", onBack = onBack) {
+        SwitchCard {
+            SettingRow(
+                icon = Icons.Default.Star,
+                title = "No premium tier",
+                subtitle = "All features included in this build"
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Label("Notes")
+        SwitchCard {
+            Hint("This build contains no premium upsells or gated features.")
         }
     }
 }
