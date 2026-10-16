@@ -250,6 +250,17 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      also lost its `AnimatedVisibility` slide+fade: a plain `if` swaps it in the
      same frame, like FUTO, which also stops the keyboard being re-measured on
      every animation frame.
+61. `[x]` **A voice window that shows its work.** The mic used to start a
+     `SpeechRecognizer` silently behind the keyboard: no window, no caption, no
+     error — the tap read as a dead button. Voice input is now a first-class
+     overlay, the way FUTO opens a window for the mic. A new `VoiceInputState`
+     (published by the IME service, drawn by Compose) replaces the private
+     `isListening` boolean, so the window can show a pulsing mic while it listens,
+     the live partial caption as words arrive, and a plain-English sentence for
+     every failure (unavailable engine, missing `RECORD_AUDIO`, network, timeout).
+     The window opens in the same frame the mic is tapped, commits the transcript,
+     then closes itself after a short "Added" beat. A committed-but-blank result
+     is an error, never a silent no-op. Covered by 6 new `VoiceInputTest` cases.
 
 ## Constraints
 

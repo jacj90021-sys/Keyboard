@@ -43,6 +43,8 @@ import com.example.keyboard.KeyboardPrefsRepository
 import com.example.keyboard.PaperLimeKeyboardView
 import com.example.keyboard.ThemeChoice
 import com.example.keyboard.VoiceInput
+import com.example.keyboard.VoiceInputState
+import com.example.keyboard.VoicePhase
 import com.example.keyboard.getPalette
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -86,7 +88,14 @@ class PaperLimeInputMethodService : InputMethodService(),
     }
 
     private var speechRecognizer: SpeechRecognizer? = null
-    private var isListening = false
+
+    // The voice window is drawn by the Compose front end, so the recognition
+    // lifecycle is published as state instead of hidden behind a boolean:
+    // STARTING/LISTENING keep the window on screen with the mic animating,
+    // DONE lets it close once the transcript lands.
+    private val _voiceInput = MutableStateFlow(VoiceInputState())
+    val voiceInput: StateFlow<VoiceInputState> = _voiceInput.asStateFlow()
+    private val isListening: Boolean get() = _voiceInput.value.isActive
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -144,12 +153,15 @@ class PaperLimeInputMethodService : InputMethodService(),
             setContent {
                 val p by this@PaperLimeInputMethodService.prefs.collectAsState()
                 val clips by this@PaperLimeInputMethodService.clipboardItems.collectAsState()
+                val voice by this@PaperLimeInputMethodService.voiceInput.collectAsState()
                 val palette = remember(p.theme) { getPalette(p.theme) }
 
                 PaperLimeKeyboardView(
                     palette = palette,
                     prefs = p,
                     clipboardClips = clips,
+                    voiceInput = voice,
+                    onStopVoice = { stopVoiceInput() },
                     onClearClipboard = {
                         clipboardHistory.clear()
                         _clipboardItems.value = emptyList()
@@ -356,6 +368,10 @@ class PaperLimeInputMethodService : InputMethodService(),
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             Log.w(TAG, "Speech recognition not available")
+            _voiceInput.value = VoiceInputState(
+                VoicePhase.UNAVAILABLE,
+                message = "Voice input isn't available on this device"
+            )
             return
         }
 
@@ -368,6 +384,10 @@ class PaperLimeInputMethodService : InputMethodService(),
                 // The IME has no permission-request surface, so bounce to the app,
                 // which prompts for RECORD_AUDIO and returns the user here.
                 Log.w(TAG, "RECORD_AUDIO not granted; asking via MainActivity")
+                _voiceInput.value = VoiceInputState(
+                    VoicePhase.PERMISSION,
+                    message = "Allow microphone access to use voice input"
+                )
                 runCatching {
                     startActivity(
                         Intent(this, MainActivity::class.java)
@@ -379,39 +399,61 @@ class PaperLimeInputMethodService : InputMethodService(),
             }
         }
 
+        // Open the mic window before the engine has confirmed anything: a tap
+        // that visibly opens the mic reads as working, where the old silent
+        // start read as a dead button.
+        _voiceInput.value = VoiceInputState(VoicePhase.STARTING)
+
         try {
+            speechRecognizer?.setRecognitionListener(null)
             speechRecognizer?.destroy()
         } catch (_: Exception) {
         }
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: android.os.Bundle?) {
-                isListening = true
+                if (_voiceInput.value.isActive) {
+                    _voiceInput.value = _voiceInput.value.copy(phase = VoicePhase.LISTENING)
+                }
             }
 
-            override fun onBeginningOfSpeech() {}
+            override fun onBeginningOfSpeech() {
+                if (_voiceInput.value.isActive) {
+                    _voiceInput.value = _voiceInput.value.copy(phase = VoicePhase.LISTENING)
+                }
+            }
 
             override fun onRmsChanged(rmsdB: Float) {}
 
             override fun onBufferReceived(buffer: ByteArray?) {}
 
             override fun onEndOfSpeech() {
-                isListening = false
+                // The transcript is still in flight; keep the window open and the
+                // mic animating until onResults/onError arrives.
             }
 
             override fun onError(error: Int) {
-                isListening = false
                 Log.w(
                     TAG,
                     "speech error: ${VoiceInput.errorName(error)} ($error)" +
                         if (VoiceInput.isActionableError(error)) " [actionable]" else ""
                 )
+                _voiceInput.value = VoiceInputState(
+                    VoicePhase.ERROR,
+                    message = VoiceInput.errorMessage(error)
+                )
             }
 
             override fun onResults(results: android.os.Bundle?) {
-                isListening = false
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val text = VoiceInput.bestResult(matches) ?: return
+                val text = VoiceInput.bestResult(matches)
+                if (text == null) {
+                    _voiceInput.value = VoiceInputState(
+                        VoicePhase.ERROR,
+                        message = VoiceInput.errorMessage(SpeechRecognizer.ERROR_NO_MATCH)
+                    )
+                    return
+                }
                 runCatching {
                     val ic = currentInputConnection
                     if (ic != null) {
@@ -420,9 +462,15 @@ class PaperLimeInputMethodService : InputMethodService(),
                         ic.endBatchEdit()
                     }
                 }.onFailure { Log.e(TAG, "commit voice text failed", it) }
+                _voiceInput.value = VoiceInputState(VoicePhase.DONE, partial = text)
             }
 
-            override fun onPartialResults(partialResults: android.os.Bundle?) {}
+            override fun onPartialResults(partialResults: android.os.Bundle?) {
+                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                _voiceInput.value = _voiceInput.value.copy(
+                    partial = VoiceInput.partialCaption(matches, _voiceInput.value.partial)
+                )
+            }
 
             override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
         })
@@ -440,7 +488,10 @@ class PaperLimeInputMethodService : InputMethodService(),
             speechRecognizer?.startListening(intent)
         } catch (e: Exception) {
             Log.e(TAG, "startListening failed", e)
-            isListening = false
+            _voiceInput.value = VoiceInputState(
+                VoicePhase.ERROR,
+                message = "Voice input failed - try again"
+            )
         }
     }
 
@@ -450,7 +501,7 @@ class PaperLimeInputMethodService : InputMethodService(),
             speechRecognizer?.cancel()
         } catch (_: Exception) {
         }
-        isListening = false
+        _voiceInput.value = VoiceInputState()
     }
 
     override fun onFinishInputView(finishing: Boolean) {

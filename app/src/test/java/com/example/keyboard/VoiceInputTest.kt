@@ -73,6 +73,72 @@ class VoiceInputTest {
     }
 
     @Test
+    fun partialCaptionKeepsTheLastNonBlankLine() {
+        // The engine intermittently sends an empty partial; the caption must not
+        // flicker back to nothing mid-sentence.
+        assertEquals("hello", VoiceInput.partialCaption(listOf("hello"), ""))
+        assertEquals("hello wor", VoiceInput.partialCaption(listOf("hello wor"), "hello"))
+        assertEquals("hello", VoiceInput.partialCaption(emptyList(), "hello"))
+        assertEquals("hello", VoiceInput.partialCaption(null, "hello"))
+        assertEquals("hello", VoiceInput.partialCaption(listOf("   "), "hello"))
+        assertEquals("hi", VoiceInput.partialCaption(listOf("  hi  "), ""))
+    }
+
+    @Test
+    fun everyErrorGetsAUserFacingSentence() {
+        // The window shows this text where the old code only wrote a log line, so
+        // no code may fall through to an empty string.
+        val codes = listOf(
+            SpeechRecognizer.ERROR_AUDIO,
+            SpeechRecognizer.ERROR_CLIENT,
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS,
+            SpeechRecognizer.ERROR_NETWORK,
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+            SpeechRecognizer.ERROR_NO_MATCH,
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+            SpeechRecognizer.ERROR_SERVER,
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
+            Int.MIN_VALUE
+        )
+        codes.forEach { code ->
+            val message = VoiceInput.errorMessage(code)
+            assertTrue("code $code has no message", message.isNotBlank())
+        }
+    }
+
+    @Test
+    fun onlyStartingAndListeningCountAsActive() {
+        val active = listOf(VoiceInputState(VoicePhase.STARTING), VoiceInputState(VoicePhase.LISTENING))
+        val idle = VoiceInputState()
+        assertTrue(active.all { it.isActive })
+        assertFalse(VoiceInputState(VoicePhase.IDLE).isActive)
+        assertFalse(VoiceInputState(VoicePhase.DONE).isActive)
+        assertFalse(VoiceInputState(VoicePhase.ERROR).isActive)
+        assertFalse(VoiceInputState(VoicePhase.UNAVAILABLE).isActive)
+        assertFalse(VoiceInputState(VoicePhase.PERMISSION).isActive)
+        assertFalse(VoiceInputState().isVisible)
+        assertTrue(VoiceInputState(VoicePhase.LISTENING).isVisible)
+        assertTrue(VoiceInputState(VoicePhase.ERROR).isVisible)
+    }
+
+    @Test
+    fun statusTextNeverComesBackEmpty() {
+        // Locks the window's one-line status for every phase.
+        assertEquals("Listening\u2026", voiceStatusText(VoiceInputState(VoicePhase.LISTENING)))
+        assertEquals("Starting\u2026", voiceStatusText(VoiceInputState(VoicePhase.STARTING)))
+        assertEquals("Added", voiceStatusText(VoiceInputState(VoicePhase.DONE)))
+        assertEquals(
+            "Allow microphone access to use voice input",
+            voiceStatusText(
+                VoiceInputState(VoicePhase.PERMISSION, message = "Allow microphone access to use voice input")
+            )
+        )
+        assertTrue(voiceStatusText(VoiceInputState(VoicePhase.ERROR)).isNotBlank())
+        assertTrue(voiceStatusText(VoiceInputState(VoicePhase.UNAVAILABLE)).isNotBlank())
+        assertTrue(voiceStatusText(VoiceInputState()).isNotBlank())
+    }
+
+    @Test
     fun emptyOrMissingResultsProduceNothing() {
         assertNull(VoiceInput.bestResult(null))
         assertNull(VoiceInput.bestResult(emptyList()))

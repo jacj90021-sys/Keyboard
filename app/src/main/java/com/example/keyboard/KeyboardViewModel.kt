@@ -35,7 +35,8 @@ enum class OverlayView {
     TOOLBAR,
     ALL_ACTIONS,
     EMOJI,
-    CLIPBOARD
+    CLIPBOARD,
+    VOICE
 }
 
 data class KeyboardUiState(

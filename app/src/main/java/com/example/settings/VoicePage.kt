@@ -73,15 +73,17 @@ fun VoicePage(onBack: () -> Unit) {
         Label("How it works")
         SwitchCard {
             HintRow(
-                if (recognitionAvailable && granted) {
-                    "Tap the mic card in All Actions and start talking. What the " +
-                        "recogniser hears is committed at the cursor."
-                } else if (!recognitionAvailable) {
-                    "This device has no speech recogniser installed, so the mic " +
-                        "card will stay inert."
-                } else {
-                    "Grant microphone access above (or from the mic card) to " +
-                        "enable dictation."
+                when {
+                    recognitionAvailable && granted ->
+                        "Tap the mic on the toolbar (or the Voice Input card) and " +
+                            "start talking. The mic window shows what the recogniser " +
+                            "hears and commits it at the cursor."
+                    !recognitionAvailable ->
+                        "This device has no speech recogniser installed, so the mic " +
+                            "window will say so instead of starting."
+                    else ->
+                        "Grant microphone access above (or from the mic window) to " +
+                            "enable dictation."
                 }
             )
         }

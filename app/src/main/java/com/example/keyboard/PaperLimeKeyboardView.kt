@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -38,6 +39,10 @@ fun PaperLimeKeyboardView(
     clipboardClips: List<String> = emptyList(),
     onClearClipboard: () -> Unit = {},
     modifier: Modifier = Modifier,
+    // Voice input is owned by the IME service: it holds the SpeechRecognizer and
+    // the input connection. The view only draws the mic window and reports taps.
+    voiceInput: VoiceInputState = VoiceInputState(),
+    onStopVoice: () -> Unit = {},
     // Previews (onboarding / appearance) keep the keyboard visual-only: the
     // toolbar "More" (three dots) must not replace the view with All Actions.
     preview: Boolean = false
@@ -195,6 +200,34 @@ fun PaperLimeKeyboardView(
         if (!prefs.toolbar) overlay = OverlayView.NONE
     }
 
+    // A committed transcript closes the mic window by itself (after a beat, so
+    // the "Added" state is readable). Every other phase, including a failure,
+    // stays until the user dismisses it: a silent auto-close would look like the
+    // tap did nothing at all. The flag makes this one-shot, so re-opening the
+    // window after a DONE verdict is not immediately closed again.
+    var voiceAutoClosed by remember { mutableStateOf(false) }
+    var voiceSessionStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(voiceInput.phase) {
+        when (voiceInput.phase) {
+            VoicePhase.STARTING -> {
+                voiceAutoClosed = false
+                voiceSessionStarted = true
+            }
+            VoicePhase.DONE -> if (overlay == OverlayView.VOICE && !voiceAutoClosed) {
+                voiceAutoClosed = true
+                delay(650)
+                overlay = OverlayView.NONE
+            }
+            // The mic was torn down by the system (the field lost focus or the
+            // keyboard hid): do not leave a stale window behind.
+            VoicePhase.IDLE -> if (overlay == OverlayView.VOICE && voiceSessionStarted) {
+                voiceSessionStarted = false
+                overlay = OverlayView.NONE
+            }
+            else -> Unit
+        }
+    }
+
     val showChevron = prefs.showChevron
     val toolbarVisible = prefs.toolbar && (!showChevron || isToolbarExpanded)
 
@@ -250,7 +283,23 @@ fun PaperLimeKeyboardView(
                         overlay = if (overlay == OverlayView.ALL_ACTIONS) OverlayView.NONE else OverlayView.ALL_ACTIONS
                     }
                 },
-                onAction = { onAction(it) }
+                onAction = { actionId ->
+                    if (actionId == "voice") {
+                        // The mic opens our own voice window (FUTO keeps the mic on
+                        // the bar and opens a window for it) instead of silently
+                        // starting a recognizer behind the keyboard.
+                        if (overlay == OverlayView.VOICE) {
+                            onStopVoice()
+                            overlay = OverlayView.NONE
+                        } else {
+                            overlay = OverlayView.VOICE
+                            onAction("voice")
+                        }
+                        true
+                    } else {
+                        onAction(actionId)
+                    }
+                }
             )
         }
 
@@ -315,6 +364,10 @@ fun PaperLimeKeyboardView(
                                 // layout needs no text editor.
                                 "clipboard" -> overlay = OverlayView.CLIPBOARD
                                 "emojis" -> overlay = OverlayView.EMOJI
+                                "voice" -> {
+                                    overlay = OverlayView.VOICE
+                                    onAction("voice")
+                                }
                                 "modes" -> {
                                     mode = when (mode) {
                                         KeyboardMode.QWERTY -> KeyboardMode.NUMPAD
@@ -359,6 +412,15 @@ fun PaperLimeKeyboardView(
                         onClipClick = { clip ->
                             onCommitText(clip)
                         }
+                    )
+                }
+
+                OverlayView.VOICE -> {
+                    VoiceInputOverlay(
+                        palette = palette,
+                        state = voiceInput,
+                        onStop = onStopVoice,
+                        onClose = { overlay = OverlayView.NONE }
                     )
                 }
 

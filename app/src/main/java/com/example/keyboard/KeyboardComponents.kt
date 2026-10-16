@@ -3,6 +3,12 @@
 package com.example.keyboard
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -37,6 +43,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -467,6 +474,180 @@ fun ToolbarIconButton(
             contentDescription = null,
             tint = palette.ink,
             modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * The voice-input window.
+ *
+ * FUTO opens a *window* for the mic instead of starting a recognizer silently
+ * behind the keyboard, so the user can see the mic is live, watch words appear
+ * as they speak, and stop. This is that window for the platform recognizer: a
+ * pulsing mic while [state] is active, the live caption underneath, and a
+ * one-tap way out when the engine is missing or the mic was refused.
+ */
+@Composable
+fun VoiceInputOverlay(
+    palette: KeyboardPalette,
+    state: VoiceInputState,
+    onStop: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val active = state.isActive
+    // Draw-only pulse: it scales/alpha-fades a halo through graphicsLayer so the
+    // animation never re-measures the keyboard on each frame.
+    val transition = rememberInfiniteTransition(label = "voice")
+    val pulse by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "voice-pulse"
+    )
+
+    val dismiss = {
+        if (active) onStop()
+        onClose()
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(230.dp)
+            .padding(horizontal = 8.dp)
+            .testTag("voice:overlay"),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Voice input",
+                color = palette.ink,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.weight(1f))
+            IconButton(
+                onClick = dismiss,
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("voice:close")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close voice input",
+                    tint = palette.inkSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(104.dp)
+                    .graphicsLayer(
+                        scaleX = 0.65f + 0.55f * pulse,
+                        scaleY = 0.65f + 0.55f * pulse,
+                        alpha = if (active) 0.30f * (1f - pulse) else 0f
+                    )
+                    .clip(CircleShape)
+                    .background(palette.lime)
+            )
+            Box(
+                modifier = Modifier
+                    .size(76.dp)
+                    .clip(CircleShape)
+                    .background(if (active) palette.lime else palette.keyBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = if (active) palette.onAccent else palette.inkSecondary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            text = voiceStatusText(state),
+            color = if (state.phase == VoicePhase.ERROR) palette.ink else palette.inkSecondary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center
+        )
+
+        if (state.partial.isNotBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "\u201C${state.partial}\u201D",
+                color = palette.ink,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        VoiceActionButton(
+            label = if (active) "Stop" else "Close",
+            primary = active,
+            palette = palette,
+            testTag = "voice:action",
+            onClick = dismiss
+        )
+
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+/** The one-line status under the mic for each phase of the session. */
+internal fun voiceStatusText(state: VoiceInputState): String = when (state.phase) {
+    VoicePhase.IDLE -> "Tap the mic to speak"
+    VoicePhase.STARTING -> "Starting\u2026"
+    VoicePhase.LISTENING -> "Listening\u2026"
+    VoicePhase.DONE -> "Added"
+    VoicePhase.ERROR, VoicePhase.UNAVAILABLE, VoicePhase.PERMISSION ->
+        state.message ?: "Voice input failed"
+}
+
+@Composable
+private fun VoiceActionButton(
+    label: String,
+    primary: Boolean,
+    palette: KeyboardPalette,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .height(40.dp)
+            .widthIn(min = 132.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (primary) palette.lime else palette.keyBg)
+            .testTag(testTag)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = if (primary) palette.onAccent else palette.ink,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
