@@ -11,14 +11,9 @@ import com.example.keyboard.native.NativeEngineBridge
 private enum class AppScreen { Onboarding, Personalize, Settings }
 
 private val placeholderTitles = mapOf(
-    "languages" to "Languages & layouts",
     "clipboard" to "Clipboard",
     "emoji" to "Emoji & media",
-    "actions" to "Actions",
-    "personalization" to "Personalization",
-    "premium" to "Premium",
-    "other" to "Other",
-    "help" to "Help & feedback"
+    "premium" to "Premium"
 )
 
 @Composable
@@ -85,6 +80,10 @@ fun KeyboardApp(
                 "personalization" -> PersonalizationPage { page = null }
                 "sound" -> SoundPage(prefs, repository) { page = null }
                 "privacy" -> PrivacyPage { page = null }
+                "languages" -> LanguagesPage { page = null }
+                "actions" -> ActionsPage { page = null }
+                "other" -> OtherPage { page = null }
+                "help" -> HelpPage { page = null }
                 "about" -> AboutPage { page = null }
                 "appearance" -> PersonalizeScreen(
                     prefs = prefs,

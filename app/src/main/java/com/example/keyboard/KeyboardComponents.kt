@@ -360,38 +360,42 @@ data class ActionCardItem(
     val actionId: String
 )
 
+/**
+ * The single source of truth for the All Actions grid. Kept top-level so the
+ * keyboard's grid and the settings "Actions" page cannot drift apart.
+ */
+val allActionCards: List<ActionCardItem> = listOf(
+    ActionCardItem("Language switch key", Icons.Default.Language, "language"),
+    ActionCardItem("Undo", Icons.AutoMirrored.Filled.Undo, "undo"),
+    ActionCardItem("Redo", Icons.AutoMirrored.Filled.Redo, "redo"),
+    ActionCardItem("Text Editor", Icons.Default.Edit, "text_editor"),
+    ActionCardItem("Clipboard Manager", Icons.Default.ContentPaste, "clipboard"),
+    ActionCardItem("Theme Switcher", Icons.Default.Palette, "theme"),
+    ActionCardItem("Keyboard Modes", Icons.Default.Keyboard, "modes"),
+    ActionCardItem("Emojis", Icons.Default.Face, "emojis"),
+    ActionCardItem("Voice Input", Icons.Default.Mic, "voice"),
+    ActionCardItem("Settings", Icons.Default.Settings, "settings"),
+    ActionCardItem("Paste from Clipboard", Icons.Default.ContentPasteGo, "paste"),
+    ActionCardItem("Cut to Clipboard", Icons.Default.ContentCut, "cut"),
+    ActionCardItem("Copy to Clipboard", Icons.Default.ContentCopy, "copy"),
+    ActionCardItem("Select All", Icons.Default.SelectAll, "select_all"),
+    ActionCardItem("Arrow Up", Icons.Default.KeyboardArrowUp, "arrow_up"),
+    ActionCardItem("Arrow Down", Icons.Default.KeyboardArrowDown, "arrow_down"),
+    ActionCardItem("Arrow Left", Icons.AutoMirrored.Filled.ArrowBack, "arrow_left"),
+    ActionCardItem("Arrow Right", Icons.AutoMirrored.Filled.ArrowForward, "arrow_right"),
+    ActionCardItem("WordStyles", Icons.Default.FormatBold, "word_styles"),
+    ActionCardItem("AutoCorrect", Icons.Default.Spellcheck, "auto_correct"),
+    ActionCardItem("Hide keyboard", Icons.Default.KeyboardHide, "hide_keyboard"),
+    ActionCardItem("Translate", Icons.Default.Translate, "translate")
+)
+
 @Composable
 fun AllActionsGrid(
     palette: KeyboardPalette,
     onClose: () -> Unit,
     onActionClick: (String) -> Unit
 ) {
-    val actions = remember {
-        listOf(
-            ActionCardItem("Language switch key", Icons.Default.Language, "language"),
-            ActionCardItem("Undo", Icons.AutoMirrored.Filled.Undo, "undo"),
-            ActionCardItem("Redo", Icons.AutoMirrored.Filled.Redo, "redo"),
-            ActionCardItem("Text Editor", Icons.Default.Edit, "text_editor"),
-            ActionCardItem("Clipboard Manager", Icons.Default.ContentPaste, "clipboard"),
-            ActionCardItem("Theme Switcher", Icons.Default.Palette, "theme"),
-            ActionCardItem("Keyboard Modes", Icons.Default.Keyboard, "modes"),
-            ActionCardItem("Emojis", Icons.Default.Face, "emojis"),
-            ActionCardItem("Voice Input", Icons.Default.Mic, "voice"),
-            ActionCardItem("Settings", Icons.Default.Settings, "settings"),
-            ActionCardItem("Paste from Clipboard", Icons.Default.ContentPasteGo, "paste"),
-            ActionCardItem("Cut to Clipboard", Icons.Default.ContentCut, "cut"),
-            ActionCardItem("Copy to Clipboard", Icons.Default.ContentCopy, "copy"),
-            ActionCardItem("Select All", Icons.Default.SelectAll, "select_all"),
-            ActionCardItem("Arrow Up", Icons.Default.KeyboardArrowUp, "arrow_up"),
-            ActionCardItem("Arrow Down", Icons.Default.KeyboardArrowDown, "arrow_down"),
-            ActionCardItem("Arrow Left", Icons.AutoMirrored.Filled.ArrowBack, "arrow_left"),
-            ActionCardItem("Arrow Right", Icons.AutoMirrored.Filled.ArrowForward, "arrow_right"),
-            ActionCardItem("WordStyles", Icons.Default.FormatBold, "word_styles"),
-            ActionCardItem("AutoCorrect", Icons.Default.Spellcheck, "auto_correct"),
-            ActionCardItem("Hide keyboard", Icons.Default.KeyboardHide, "hide_keyboard"),
-            ActionCardItem("Translate", Icons.Default.Translate, "translate")
-        )
-    }
+    val actions = allActionCards
 
     Column(
         modifier = Modifier

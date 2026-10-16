@@ -85,10 +85,14 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 32. `[x]` **Pluggable reranker** — shared 8-feature vector with a pure-Rust
     linear fallback and a LiteRT implementation behind one trait.
 33. `[x]` **ML JNI surface** — `rustMlLoadModel/Reset/Status/RuntimeReport/Rank`.
-34. `[ ]` **Ship a counting model** — train/export a small `.tflite` reranker and
-    add it to `app/src/main/assets` (needs a training pipeline).
-35. `[ ]` **Feature parity test with the model** — golden outputs comparing the
-    LiteRT path against the heuristic on a fixed sample set.
+34. `[x]` **Ship a learned reranker** — `tools/build_reranker_model.py` trains a
+    linear model over the same 8-feature vector and exports
+    `app/src/main/assets/reranker.tflite` (1056 bytes); the LiteRT path uses it
+    and falls back to the heuristic when the runtime/model is absent.
+35. `[x]` **Feature parity test with the model** — `tools/test_reranker_model.py`
+    reads the committed flatbuffer, pins the shape/op contract, re-runs the
+    embedded weights over a deterministic sample set and asserts they beat the
+    heuristic quality floor; the real interpreter is cross-checked when present.
 
 ## Phase 7 — autocorrect
 
@@ -206,11 +210,13 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
     it is now an `autoCorrect` DataStore pref (default on) with a switch on the
     "Keyboard & typing" page and an All Actions card, and the space-commit path
     consults it live.
-55. `[ ]` **The remaining settings pages.** 14 of the 17 settings rows still route
-    to `PlaceholderPage`. The honest split: `prediction`, `swipe`, `sound`,
-    `personalization` (learned words are already persisted) and `about` map onto
-    real prefs/state; `languages` waits on a second dictionary; `emoji`/`premium`
-    would be inventing features with no engine behind them.
+55. `[~]` **The remaining settings pages.** The 17 rows are now almost all real:
+    `appearance`, `typing`, `topbar`, `voice`, `prediction`, `swipe`, `sound`,
+    `privacy`, `personalization`, `about`, `languages`, `actions`, `other` and
+    `help` each render real prefs/state (the All Actions list is shared with the
+    grid, diagnostics read the live engine, help links to the tracker). Only
+    `clipboard` (state lives in the IME service), `emoji` and `premium` remain
+    honest placeholders — there is no emoji catalogue or premium tier to show.
 56. `[x]` **Voice input.** Added `RECORD_AUDIO` permission, permission request
     surface via MainActivity, `SpeechRecognizer` lifecycle in the IME with
     graceful degradation, testable VoiceInput helpers (7 unit tests), and a
