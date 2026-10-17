@@ -38,6 +38,10 @@ fun PaperLimeKeyboardView(
     // three hard-coded demo clips). Previews get an empty, inert list.
     clipboardClips: List<String> = emptyList(),
     onClearClipboard: () -> Unit = {},
+    // Emoji recents, owned by the IME service (session-scoped, like the
+    // clipboard). Previews get an empty list and a no-op recorder.
+    recentEmojis: List<String> = emptyList(),
+    onEmojiUsed: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     // Voice input is owned by the IME service: it holds the SpeechRecognizer and
     // the input connection. The view only draws the mic window and reports taps.
@@ -79,6 +83,11 @@ fun PaperLimeKeyboardView(
     // mapped a dictionary, so the host-JVM/test path is completely unaffected.
     var engineReady by remember { mutableStateOf(NativeEngineBridge.isLoaded()) }
     var boardSize by remember { mutableStateOf(IntSize.Zero) }
+    // The live keyboard's height, remembered while the plain board is showing so
+    // the emoji panel can take the same footprint (FUTO's action window does the
+    // same). Only captured with no overlay open, so the panel cannot feed its own
+    // size back into it.
+    var keyboardAreaHeightPx by remember { mutableStateOf(0) }
     // Suggestions run on a background dispatcher: the query used to resolve
     // during composition, blocking the frame (next-word ranking alone cost ~9 ms
     // on the first keystroke of every word). produceState restarts when the
@@ -229,7 +238,19 @@ fun PaperLimeKeyboardView(
     }
 
     val showChevron = prefs.showChevron
-    val toolbarVisible = prefs.toolbar && (!showChevron || isToolbarExpanded)
+    // FUTO swaps the entire top bar for the action's own header when an action
+    // window opens, so the floating toolbar must not float over the emoji panel
+    // (or over any other overlay) — the panel carries its own back row instead.
+    val overlayOpen = overlay != OverlayView.NONE
+    val toolbarVisible = prefs.toolbar && !overlayOpen && (!showChevron || isToolbarExpanded)
+
+    // The emoji panel takes the board's footprint plus the row the toolbar just
+    // vacated, so the keyboard does not jump height when the picker opens.
+    val emojiPanelHeight = if (keyboardAreaHeightPx > 0) {
+        with(density) { keyboardAreaHeightPx.toDp() } + 40.dp
+    } else {
+        300.dp
+    }
 
     // Gesture typing runs only on the live letter board, never in a preview, an
     // overlay, before the dictionary has loaded, or when the user turned it off.
@@ -304,7 +325,7 @@ fun PaperLimeKeyboardView(
         }
 
         // Suggestions Bar
-        if (prefs.suggestions) {
+        if (prefs.suggestions && !overlayOpen) {
             SuggestionsBar(
                 palette = palette,
                 isExpanded = isToolbarExpanded,
@@ -350,7 +371,12 @@ fun PaperLimeKeyboardView(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
-                .onSizeChanged { boardSize = it }
+                .onSizeChanged {
+                    boardSize = it
+                    // Only the plain board sets the remembered height; the emoji
+                    // panel's own measure must not overwrite it.
+                    if (overlay == OverlayView.NONE) keyboardAreaHeightPx = it.height
+                }
                 .then(swipeTyping)
         ) {
             when (overlay) {
@@ -396,9 +422,13 @@ fun PaperLimeKeyboardView(
                 OverlayView.EMOJI -> {
                     EmojiPickerGrid(
                         palette = palette,
+                        recentEmojis = recentEmojis,
+                        panelHeight = emojiPanelHeight,
                         onClose = { overlay = OverlayView.NONE },
+                        onBackspace = trackedDelete,
                         onEmojiClick = { emo ->
                             onCommitText(emo)
+                            onEmojiUsed(emo)
                         }
                     )
                 }

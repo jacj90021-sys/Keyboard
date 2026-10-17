@@ -27,7 +27,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -711,7 +713,9 @@ fun AllActionsGrid(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("allactions:back")
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -798,89 +802,196 @@ val emojiCategories: List<Pair<String, List<String>>> = listOf(
     "☕" to listOf("☕","🍵","🧃","🥤","🍶","🍺","🍻","🥂","🍷","🥃","🍸","🍹","🍔","🍟","🍕","🌭","🥪","🌮","🌯","🥗","🍱","🍜","🍣","🍰","🍩")
 )
 
+/**
+ * Display titles for [emojiCategories], index-aligned. The picker uses them in its
+ * header and as the accessibility label for each tab; the settings page keeps
+ * showing the header glyph.
+ */
+val emojiCategoryNames: List<String> = listOf(
+    "Smileys & Emotion",
+    "People & Body",
+    "Hearts",
+    "Animals & Nature",
+    "Food & Drink"
+)
+
 @Composable
 fun EmojiPickerGrid(
     palette: KeyboardPalette,
+    recentEmojis: List<String> = emptyList(),
+    panelHeight: Dp = 300.dp,
     onClose: () -> Unit,
+    onBackspace: () -> Unit = {},
     onEmojiClick: (String) -> Unit
 ) {
-    val categories = emojiCategories
+    // Tabs are keyed by title, not index, so prepending a "Recent" tab the moment
+    // the first emoji is used cannot shift the selection out from under the user.
+    val tabs = remember(recentEmojis) {
+        buildList {
+            if (recentEmojis.isNotEmpty()) add(EmojiTab("Recent", "🕒", recentEmojis))
+            emojiCategories.forEachIndexed { index, (glyph, items) ->
+                add(EmojiTab(emojiCategoryNames.getOrElse(index) { glyph }, glyph, items))
+            }
+        }
+    }
+    var selectedTitle by remember { mutableStateOf("") }
+    val selectedTab = tabs.firstOrNull { it.title == selectedTitle } ?: tabs.first()
+    val gridState = rememberLazyGridState()
 
-    var selectedCategoryIndex by remember { mutableIntStateOf(0) }
-    val currentEmojis = categories[selectedCategoryIndex].second
+    // Jump back to the top whenever the category changes, so a search-free switch
+    // always lands on the first row (FUTO snaps the strip the same way).
+    LaunchedEffect(selectedTab.title) { gridState.scrollToItem(0) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp)
-            .padding(horizontal = 6.dp)
+            .height(panelHeight)
+            .testTag("emoji:panel")
     ) {
+        // Slim header: back chevron + the active category name. This replaces the
+        // floating toolbar row, which the view hides while the panel is open.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp),
+                .height(36.dp)
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
                 onClick = onClose,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("emoji:back")
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = "Back to keyboard",
                     tint = palette.ink,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                items(categories.indices.toList()) { index ->
-                    val isSelected = index == selectedCategoryIndex
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) palette.lime else palette.keyBg)
-                            .border(1.dp, palette.line, RoundedCornerShape(8.dp))
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { selectedCategoryIndex = index }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = categories[index].first, fontSize = 16.sp)
-                    }
-                }
-            }
+            Text(
+                text = selectedTab.title,
+                color = palette.ink,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 6.dp)
+            )
         }
 
         LazyVerticalGrid(
-            columns = GridCells.Fixed(7),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.fillMaxSize()
+            state = gridState,
+            columns = GridCells.Fixed(8),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 4.dp)
         ) {
-            items(currentEmojis) { emo ->
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(palette.keyBg)
-                        .combinedClickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { onEmojiClick(emo) }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = emo, fontSize = 18.sp)
-                }
+            items(selectedTab.items) { emo ->
+                EmojiChoiceCell(palette = palette, emoji = emo, onClick = { onEmojiClick(emo) })
             }
         }
+
+        // Bottom navigation, FUTO-order: ABC on the left, the scrollable category
+        // strip in the middle, backspace on the right.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(
+                onClick = onClose,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .height(32.dp)
+                    .testTag("emoji:abc"),
+                contentPadding = PaddingValues(horizontal = 10.dp),
+                colors = ButtonDefaults.textButtonColors(containerColor = palette.keyBg)
+            ) {
+                Text("ABC", color = palette.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            LazyRow(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                itemsIndexed(tabs) { index, tab ->
+                    val isSelected = tab.title == selectedTab.title
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) palette.lime else Color.Transparent)
+                            .testTag("emoji:tab:$index")
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { selectedTitle = tab.title }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = tab.glyph,
+                            fontSize = 18.sp,
+                            color = if (isSelected) palette.onAccent else palette.inkSecondary
+                        )
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = onBackspace,
+                modifier = Modifier
+                    .size(40.dp)
+                    .testTag("emoji:backspace")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Backspace,
+                    contentDescription = "Backspace",
+                    tint = palette.ink,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+private data class EmojiTab(val title: String, val glyph: String, val items: List<String>)
+
+/**
+ * One emoji cell. FUTO draws a bare glyph on the board (its cells have a ripple,
+ * not a filled key), which is what makes the grid read as a picker and not a
+ * calculator. A pressed wash stands in for the ripple.
+ */
+@Composable
+private fun EmojiChoiceCell(
+    palette: KeyboardPalette,
+    emoji: String,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (pressed) palette.keyBg else Color.Transparent)
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = emoji, fontSize = 24.sp)
     }
 }
 
@@ -908,7 +1019,9 @@ fun ClipboardListPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = onClose,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("clipboard:back")
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,

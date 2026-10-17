@@ -113,12 +113,17 @@ class KeyboardInteractionTest {
     @Test
     fun `every toolbar overlay opens and closes`() {
         start()
+        // Opening an overlay hides the toolbar (FUTO swaps the whole bar for the
+        // action's own header), so each overlay is closed before the next tool is
+        // reached for.
         clickTag("tool:emoji")
+        clickTag("emoji:back")
         clickTag("tool:clipboard")
-        clickTag("tool:translate")
-        clickTag("tool:gif")
+        clickTag("clipboard:back")
+        clickTag("tool:translate")   // inert: closes any overlay, shows nothing
+        clickTag("tool:gif")         // inert too
         clickTag("tool:more")
-        clickTag("tool:more")      // toggle it back off
+        clickTag("allactions:back")
         compose.onNodeWithTag("key:a").assertIsDisplayed()
     }
 

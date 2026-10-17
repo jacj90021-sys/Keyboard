@@ -277,6 +277,20 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      curling as it lifted could reject a perfectly good swipe. Covered by 5 new
      `touch` cases, 4 new `gesture` cases and 2 new `dictionary` cases.
 
+63. `[x]` **The emoji panel is an action window, not a card.** Opening the emoji
+     tool used to leave the floating toolbar (and the suggestion strip) sitting
+     above a 240 dp grid whose cells were filled, bordered boxes — a calculator,
+     not a picker. The panel now takes the board's own footprint (its height is
+     remembered while the plain keyboard shows, plus the row the toolbar
+     vacated) and carries its own header: a back chevron, the active category's
+     name, a bare-glyph grid with a pressed wash instead of filled keys, and a
+     bottom strip of ABC · categories · backspace — FUTO's arrangement. The view
+     hides the floating toolbar and the suggestion strip whenever *any* overlay
+     is open, so the bar can no longer float over the panel (FUTO swaps its whole
+     action bar for the action's header the same way). A session-scoped "Recent"
+     tab, owned by the IME service and bounded to 24 like the clipboard history,
+     fronts the catalogue.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

@@ -38,6 +38,7 @@ import com.example.keyboard.CursorMove
 import com.example.keyboard.EditorActions
 import com.example.keyboard.EditorConnection
 import com.example.keyboard.EditorSelection
+import com.example.keyboard.EmojiRecents
 import com.example.keyboard.KeyboardPrefs
 import com.example.keyboard.KeyboardPrefsRepository
 import com.example.keyboard.PaperLimeKeyboardView
@@ -85,6 +86,17 @@ class PaperLimeInputMethodService : InputMethodService(),
                 _clipboardItems.value = clipboardHistory.entries()
             }
         }.onFailure { Log.e(TAG, "clipboard capture failed", it) }
+    }
+
+    // Emoji recents: session-scoped like the clipboard history above. FUTO's
+    // picker opens on a Recent tab, and this is what feeds ours.
+    private val emojiRecents = EmojiRecents()
+    private val _recentEmojis = MutableStateFlow<List<String>>(emptyList())
+    val recentEmojis: StateFlow<List<String>> = _recentEmojis.asStateFlow()
+    private fun recordEmoji(emoji: String) {
+        if (emojiRecents.add(emoji)) {
+            _recentEmojis.value = emojiRecents.entries()
+        }
     }
 
     private var speechRecognizer: SpeechRecognizer? = null
@@ -154,12 +166,15 @@ class PaperLimeInputMethodService : InputMethodService(),
                 val p by this@PaperLimeInputMethodService.prefs.collectAsState()
                 val clips by this@PaperLimeInputMethodService.clipboardItems.collectAsState()
                 val voice by this@PaperLimeInputMethodService.voiceInput.collectAsState()
+                val emojis by this@PaperLimeInputMethodService.recentEmojis.collectAsState()
                 val palette = remember(p.theme) { getPalette(p.theme) }
 
                 PaperLimeKeyboardView(
                     palette = palette,
                     prefs = p,
                     clipboardClips = clips,
+                    recentEmojis = emojis,
+                    onEmojiUsed = { this@PaperLimeInputMethodService.recordEmoji(it) },
                     voiceInput = voice,
                     onStopVoice = { stopVoiceInput() },
                     onClearClipboard = {
