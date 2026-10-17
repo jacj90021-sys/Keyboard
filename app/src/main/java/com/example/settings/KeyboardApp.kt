@@ -81,7 +81,7 @@ fun KeyboardApp(
                 "personalization" -> PersonalizationPage { page = null }
                 "sound" -> SoundPage(prefs, repository) { page = null }
                 "privacy" -> PrivacyPage { page = null }
-                "languages" -> LanguagesPage { page = null }
+                "languages" -> LanguagesLayoutsScreen { page = null }
                 "actions" -> ActionsPage { page = null }
                 "other" -> OtherPage { page = null }
                 "help" -> HelpPage { page = null }

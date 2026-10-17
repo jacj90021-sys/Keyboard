@@ -291,6 +291,21 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      tab, owned by the IME service and bounded to 24 like the clipboard history,
      fronts the catalogue.
 
+64. `[x]` **Languages & Layouts is a real flow, not a single stub page.** The row
+     used to open one card that said "the only bundled dictionary". It now opens
+     the whole design: the overview (display-language-names sheet, subtype-label
+     switch, the language card with its Voice/Dictionary/Transformer model rows,
+     the active-layout line, the multilingual switch, and the lime Add Keyboard
+     Layout / red Remove Language buttons), a FUTO-style two-column layout tile
+     grid with a check-to-save header and a floating keyboard button, and the
+     per-resource Explore pages (import, voice, dictionaries, transformer). It is
+     a faithful Compose port of the supplied design — the crisp 0-offset lime
+     shadows are drawn directly rather than faked with elevation, the tiles carry
+     a live mini-keyboard preview, and selection is real UI state. Note: the
+     layout picker changes the *displayed* active layout only; the Rust core
+     still ships a single QWERTY board, so the choice is not yet wired to the
+     engine. Compile verification pending.
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

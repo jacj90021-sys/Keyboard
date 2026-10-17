@@ -9,7 +9,6 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Face
@@ -33,29 +32,6 @@ import com.example.keyboard.native.NativeEngineBridge
  * these invent an engine: they report real state (bundled language, available
  * actions, engine diagnostics) or link out to the project's issue tracker.
  */
-
-@Composable
-fun LanguagesPage(onBack: () -> Unit) {
-    PageScaffold(title = "Languages & layouts", onBack = onBack) {
-        Label("Active language")
-        SwitchCard {
-            SettingRow(
-                icon = Icons.Default.Language,
-                title = "English (US)",
-                subtitle = "QWERTY · the only bundled dictionary",
-                trailingValue = "Active"
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-        Label("Notes")
-        SwitchCard {
-            Hint("Only one dictionary ships with this build, so switching " +
-                "languages is not available yet. The switch key on the board is " +
-                "a no-op until a second dictionary is added.")
-        }
-    }
-}
 
 @Composable
 fun ActionsPage(onBack: () -> Unit) {
