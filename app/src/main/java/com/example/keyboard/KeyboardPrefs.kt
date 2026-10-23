@@ -31,6 +31,54 @@ object PrefKeys {
     val haptics = booleanPreferencesKey("haptics")
     val clipboardHistory = booleanPreferencesKey("clipboardHistory")
     val onboardingDone = booleanPreferencesKey("onboardingDone")
+    // "Long-press keys & spacebar". Stored now; see the note on KeyboardPrefs:
+    // the board does not read these yet.
+    val backspaceHoldWords = booleanPreferencesKey("backspaceHoldWords")
+    val backspaceSwipe = stringPreferencesKey("backspaceSwipe")
+    val spacebarSwipe = stringPreferencesKey("spacebarSwipe")
+    val spacebarHold = stringPreferencesKey("spacebarHold")
+    val longPressMs = intPreferencesKey("longPressMs")
+    // FUTO's two switches on the same screen. hideWhenHardKeyboard is honoured by
+    // the IME service; inlineAutofill is stored but the chips are not wired yet.
+    val inlineAutofill = booleanPreferencesKey("inlineAutofill")
+    val hideWhenHardKeyboard = booleanPreferencesKey("hideWhenHardKeyboard")
+    // "Auto-capitalization" — read by the IME service (it turns the board's Shift
+    // key on when the caret sits at the start of a sentence).
+    val autoCap = booleanPreferencesKey("autoCap")
+    // "Emoji Suggestions" — read by the board, which puts an emoji in front of the
+    // word suggestions for the words it knows one for.
+    val suggestEmojis = booleanPreferencesKey("suggestEmojis")
+}
+
+/**
+ * What sliding a finger off the delete key does — FUTO's "Swipe to delete".
+ * Stored as a plain key string so the DataStore stays readable by eye.
+ */
+enum class BackspaceSwipe(val prefKey: String, val label: String) {
+    OFF("off", "Off"),
+    CHARACTERS("characters", "Characters"),
+    WORDS("words", "Words");
+
+    companion object {
+        /** FUTO's own default for this setting. */
+        fun fromKey(key: String?): BackspaceSwipe =
+            entries.firstOrNull { it.prefKey == key } ?: CHARACTERS
+    }
+}
+
+/**
+ * A job the spacebar can do — FUTO's Spacebar "Swipe" / "Hold" pickers. [OFF] is
+ * only offered for the slide; a hold always does something.
+ */
+enum class SpacebarAction(val prefKey: String, val label: String) {
+    OFF("off", "Off"),
+    CURSOR("cursor", "Move cursor"),
+    LANGUAGE("language", "Switch language");
+
+    companion object {
+        fun fromKey(key: String?, fallback: SpacebarAction): SpacebarAction =
+            entries.firstOrNull { it.prefKey == key } ?: fallback
+    }
 }
 
 /**
@@ -53,9 +101,44 @@ data class KeyboardPrefs(
     val sound: Boolean = true,
     val haptics: Boolean = true,
     val clipboardHistory: Boolean = true,
-    val onboardingDone: Boolean = false
+    val onboardingDone: Boolean = false,
+    // "Long-press keys & spacebar". These are stored and shown now; the board
+    // does not act on them yet — the backspace still repeats plain deletes and the
+    // spacebar has no slide action, so these three are inert preferences until the
+    // keyboard core and the IME service are taught to read them.
+    val backspaceHoldWords: Boolean = false,
+    val backspaceSwipe: BackspaceSwipe = BackspaceSwipe.CHARACTERS,
+    val spacebarSwipe: SpacebarAction = SpacebarAction.CURSOR,
+    val spacebarHold: SpacebarAction = SpacebarAction.LANGUAGE,
+    val longPressMs: Int = 300,
+    // FUTO's defaults: inline autofill on, hide-when-USB off. inlineAutofill is a
+    // saved choice only — we never call requestInlineSuggestions yet, so no chip
+    // can appear; hideWhenHardKeyboard is read by the IME service's
+    // onEvaluateInputViewShown.
+    val inlineAutofill: Boolean = true,
+    val hideWhenHardKeyboard: Boolean = false,
+    // "Capitalize the first word of each sentence", FUTO's default. The board's
+    // Shift key is turned on by the IME service when Android says the caret sits
+    // at the start of a sentence; with this off nothing ever raises Shift for you.
+    val autoCap: Boolean = true,
+    // "Emoji Suggestions", FUTO's default. The board knows a small list of words
+    // that have an obvious emoji (see EmojiSuggestions) and offers that emoji in
+    // the strip in front of the word suggestions; with this off the strip shows
+    // words only.
+    val suggestEmojis: Boolean = true
 ) {
-    val showChevron: Boolean get() = toolbar && suggestions && arrow
+    /**
+     * The strip above the keys hosts two unrelated things: the engine's word
+     * suggestions, and the Fn key's Esc / Tab / Ctrl / ... chips. Word
+     * suggestions can be switched off, but Fn still needs a row to draw in, so
+     * the strip stays whenever EITHER is on. That is what makes Fn independent
+     * of the "Word suggestions" switch: with suggestions off the strip shows as
+     * a deliberately empty state until Fn is clicked or held.
+     */
+    val showStrip: Boolean get() = suggestions || fn
+
+    /** The ^ only makes sense when the strip it sits in is actually there. */
+    val showChevron: Boolean get() = toolbar && arrow && showStrip
 }
 
 class KeyboardPrefsRepository(private val context: Context) {
@@ -77,7 +160,16 @@ class KeyboardPrefsRepository(private val context: Context) {
             sound = p[PrefKeys.sound] ?: true,
             haptics = p[PrefKeys.haptics] ?: true,
             clipboardHistory = p[PrefKeys.clipboardHistory] ?: true,
-            onboardingDone = p[PrefKeys.onboardingDone] ?: false
+            onboardingDone = p[PrefKeys.onboardingDone] ?: false,
+            backspaceHoldWords = p[PrefKeys.backspaceHoldWords] ?: false,
+            backspaceSwipe = BackspaceSwipe.fromKey(p[PrefKeys.backspaceSwipe]),
+            spacebarSwipe = SpacebarAction.fromKey(p[PrefKeys.spacebarSwipe], SpacebarAction.CURSOR),
+            spacebarHold = SpacebarAction.fromKey(p[PrefKeys.spacebarHold], SpacebarAction.LANGUAGE),
+            longPressMs = p[PrefKeys.longPressMs] ?: 300,
+            inlineAutofill = p[PrefKeys.inlineAutofill] ?: true,
+            hideWhenHardKeyboard = p[PrefKeys.hideWhenHardKeyboard] ?: false,
+            autoCap = p[PrefKeys.autoCap] ?: true,
+            suggestEmojis = p[PrefKeys.suggestEmojis] ?: true
         )
     }
 
@@ -87,6 +179,42 @@ class KeyboardPrefsRepository(private val context: Context) {
 
     suspend fun setKeyHeight(dp: Int) {
         context.keyboardDataStore.edit { it[PrefKeys.keyHeight] = dp }
+    }
+
+    suspend fun setBackspaceHoldWords(value: Boolean) {
+        context.keyboardDataStore.edit { it[PrefKeys.backspaceHoldWords] = value }
+    }
+
+    suspend fun setBackspaceSwipe(mode: BackspaceSwipe) {
+        context.keyboardDataStore.edit { it[PrefKeys.backspaceSwipe] = mode.prefKey }
+    }
+
+    suspend fun setSpacebarSwipe(action: SpacebarAction) {
+        context.keyboardDataStore.edit { it[PrefKeys.spacebarSwipe] = action.prefKey }
+    }
+
+    suspend fun setSpacebarHold(action: SpacebarAction) {
+        context.keyboardDataStore.edit { it[PrefKeys.spacebarHold] = action.prefKey }
+    }
+
+    suspend fun setLongPressMs(ms: Int) {
+        context.keyboardDataStore.edit { it[PrefKeys.longPressMs] = ms }
+    }
+
+    suspend fun setInlineAutofill(value: Boolean) {
+        context.keyboardDataStore.edit { it[PrefKeys.inlineAutofill] = value }
+    }
+
+    suspend fun setHideWhenHardKeyboard(value: Boolean) {
+        context.keyboardDataStore.edit { it[PrefKeys.hideWhenHardKeyboard] = value }
+    }
+
+    suspend fun setAutoCap(value: Boolean) {
+        context.keyboardDataStore.edit { it[PrefKeys.autoCap] = value }
+    }
+
+    suspend fun setSuggestEmojis(value: Boolean) {
+        context.keyboardDataStore.edit { it[PrefKeys.suggestEmojis] = value }
     }
 
     suspend fun setBool(key: String, value: Boolean) {

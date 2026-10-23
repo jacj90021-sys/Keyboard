@@ -4,11 +4,13 @@ import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.text.TextUtils
 import android.util.Log
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
@@ -52,6 +54,42 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.Locale
+
+/**
+ * Whether a hard keyboard is attached and usable, as read from a Configuration.
+ * This is exactly the condition the platform's own InputMethodService uses to
+ * suppress the soft keyboard; kept pure so it can be tested without a device.
+ */
+internal fun isHardwareKeyboardAttached(config: Configuration): Boolean =
+    config.keyboard != Configuration.KEYBOARD_NOKEYS &&
+        config.hardKeyboardHidden != Configuration.HARDKEYBOARDHIDDEN_YES
+
+/**
+ * Whether our input view should be shown. We always show — unless the user turned
+ * on "Hide when USB keyboard is detected", in which case a hard keyboard that is
+ * attached and not folded away keeps the soft one hidden. With the switch off
+ * (the default) the answer is always true, so nothing changes for anyone who
+ * never touches it.
+ */
+internal fun shouldShowInputView(hideWhenHardKeyboard: Boolean, config: Configuration): Boolean =
+    if (hideWhenHardKeyboard) !isHardwareKeyboardAttached(config) else true
+
+/**
+ * Whether the caret sits where a new sentence starts, from the bit mask that
+ * `InputConnection.getCursorCapsMode` returns. This is Android's own judgement of
+ * "the first word of each sentence", not a rule we invent — kept pure so it can be
+ * checked without a device.
+ */
+internal fun isSentenceStart(capsMode: Int): Boolean =
+    capsMode and TextUtils.CAP_MODE_SENTENCES != 0
+
+/**
+ * Auto-capitalization's instruction to the board. [wanted] says whether Shift
+ * should be on; [epoch] ticks on every re-check so the board re-arms even when the
+ * answer has not changed — two sentences in a row both start with a capital, and a
+ * board that only watched [wanted] would miss the second one.
+ */
+data class AutoShiftHint(val wanted: Boolean = false, val epoch: Long = 0)
 
 class PaperLimeInputMethodService : InputMethodService(),
     LifecycleOwner,
@@ -108,6 +146,29 @@ class PaperLimeInputMethodService : InputMethodService(),
     private val _voiceInput = MutableStateFlow(VoiceInputState())
     val voiceInput: StateFlow<VoiceInputState> = _voiceInput.asStateFlow()
     private val isListening: Boolean get() = _voiceInput.value.isActive
+
+    // Auto-capitalization: the board owns the Shift key, so Android's answer to
+    // "is this the start of a sentence?" is published as state for the front end
+    // to act on.
+    private val _autoShift = MutableStateFlow(AutoShiftHint())
+    val autoShift: StateFlow<AutoShiftHint> = _autoShift.asStateFlow()
+
+    /**
+     * Re-ask Android whether the caret is at the start of a sentence and publish
+     * the answer. Called when the keyboard comes up for a field, after we commit,
+     * delete or press Enter, and whenever the caret moves, so Shift follows the
+     * sentence the user is actually in. The board only reads this when
+     * "Auto-capitalization" is on, so with the setting off it is harmless noise.
+     */
+    private fun refreshAutoShift() {
+        val capsMode = runCatching {
+            currentInputConnection?.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES) ?: 0
+        }.getOrDefault(0)
+        _autoShift.value = AutoShiftHint(
+            wanted = isSentenceStart(capsMode),
+            epoch = _autoShift.value.epoch + 1
+        )
+    }
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -167,11 +228,14 @@ class PaperLimeInputMethodService : InputMethodService(),
                 val clips by this@PaperLimeInputMethodService.clipboardItems.collectAsState()
                 val voice by this@PaperLimeInputMethodService.voiceInput.collectAsState()
                 val emojis by this@PaperLimeInputMethodService.recentEmojis.collectAsState()
+                val autoShift by this@PaperLimeInputMethodService.autoShift.collectAsState()
                 val palette = remember(p.theme) { getPalette(p.theme) }
 
                 PaperLimeKeyboardView(
                     palette = palette,
                     prefs = p,
+                    autoShiftWanted = autoShift.wanted,
+                    autoShiftEpoch = autoShift.epoch,
                     clipboardClips = clips,
                     recentEmojis = emojis,
                     onEmojiUsed = { this@PaperLimeInputMethodService.recordEmoji(it) },
@@ -190,6 +254,7 @@ class PaperLimeInputMethodService : InputMethodService(),
                                 ic.endBatchEdit()
                             }
                         }.onFailure { Log.e(TAG, "commitText failed", it) }
+                        refreshAutoShift()
                     },
                     onDelete = {
                         runCatching {
@@ -201,6 +266,7 @@ class PaperLimeInputMethodService : InputMethodService(),
                                 ic?.commitText("", 1)
                             }
                         }.onFailure { Log.e(TAG, "delete failed", it) }
+                        refreshAutoShift()
                     },
                     onEnter = {
                         runCatching {
@@ -216,6 +282,7 @@ class PaperLimeInputMethodService : InputMethodService(),
                                 ic.commitText("\n", 1)
                             }
                         }.onFailure { Log.e(TAG, "enter failed", it) }
+                        refreshAutoShift()
                     },
                     // The All Actions cards that need the platform text editor
                     // (clipboard, cursor, undo/redo, selection, case styling) plus
@@ -244,7 +311,15 @@ class PaperLimeInputMethodService : InputMethodService(),
         return composeView
     }
 
-    override fun onEvaluateInputViewShown(): Boolean = true
+    /**
+     * "Hide when USB keyboard is detected" (off by default) is the one setting that
+     * can suppress our window: with it on, a hard keyboard that is attached and not
+     * folded away keeps the soft one hidden, which is the platform's own rule. The
+     * platform re-asks this when the configuration changes, so plugging a keyboard
+     * in or out takes effect without any extra wiring.
+     */
+    override fun onEvaluateInputViewShown(): Boolean =
+        shouldShowInputView(_prefs.value.hideWhenHardKeyboard, resources.configuration)
 
     /**
      * Answer an All Actions card. Returns whether the action did something, so
@@ -355,6 +430,8 @@ class PaperLimeInputMethodService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         currentInputEditorInfo = info
+        // A new field may well begin a sentence; ask before the board draws.
+        refreshAutoShift()
         runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START) }
         runCatching { lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME) }
         // Only watch the clipboard while the keyboard is actually on screen: a
@@ -517,6 +594,29 @@ class PaperLimeInputMethodService : InputMethodService(),
         } catch (_: Exception) {
         }
         _voiceInput.value = VoiceInputState()
+    }
+
+    /**
+     * The caret moved — the user tapped somewhere in the text, or we typed at the
+     * end of a sentence. Auto-capitalization follows the caret, so re-ask.
+     */
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(
+            oldSelStart,
+            oldSelEnd,
+            newSelStart,
+            newSelEnd,
+            candidatesStart,
+            candidatesEnd
+        )
+        refreshAutoShift()
     }
 
     override fun onFinishInputView(finishing: Boolean) {

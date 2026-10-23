@@ -46,7 +46,7 @@ fun PersonalizeScreen(
     val extras = listOf(
         ExtraItem("numRow", "Number row", "Digits always on top", prefs.numRow),
         ExtraItem("toolbar", "Toolbar icons", "Emoji, clipboard, translate, GIF", prefs.toolbar),
-        ExtraItem("suggestions", "Word suggestions", "Yes · Okay · Thanks above the keys", prefs.suggestions),
+        ExtraItem("suggestions", "Word suggestions", "Candidates above the keys", prefs.suggestions),
         ExtraItem("special", "Special characters", "Extra symbols on keys", prefs.special),
         ExtraItem("popups", "Key preview popup", "Show a bubble when you press", prefs.popups),
         ExtraItem("fn", "Fn key", "Extra key for developers", prefs.fn)

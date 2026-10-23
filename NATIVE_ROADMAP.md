@@ -306,6 +306,171 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      still ships a single QWERTY board, so the choice is not yet wired to the
      engine. Compile verification pending.
 
+65. `[x]` **Fn stops depending on word suggestions.** The Fn key draws its
+     Esc / Tab / Ctrl / Alt / Home / End chips *inside* the suggestion strip, and
+     the strip was composed only when the "Word suggestions" switch was on — so
+     with suggestions off, clicking or holding Fn did nothing at all, and the
+     only way to get Esc/Ctrl was to also turn word suggestions on. That coupling
+     is wrong: Fn is a keyboard feature, not a prediction feature. The strip is
+     now hosted by `showStrip = suggestions || fn`, so with suggestions off and
+     Fn on it shows as a deliberately empty state that fills with the Fn chips
+     the moment Fn is tapped or held — exactly what it already did with
+     suggestions on. `showChevron` follows the strip
+     (`toolbar && arrow && showStrip`), so Fn + toolbar still offers the ^ to
+     show and hide the toolbar, while the all-five case (number row, toolbar,
+     suggestions, special characters, popups) behaves exactly as before. Pinned
+     by `KeyboardPrefsTest`. Two stale "Yes · Okay · Thanks above the keys"
+     subtitle strings, describing a filler-word fallback that was deleted long
+     ago, were corrected at the same time.
+
+66. `[x]` **"Keyboard & typing" is one entry, and it opens a real resize screen.**
+     The page had turned into a grab-bag of switches (Number row, Key preview
+     popup, Autocorrect, Special characters, Fn) that repeated settings already
+     living in Appearance and in Prediction. FUTO's Keyboard settings leads with
+     "Resize Keyboard" and opens a screen of its own from it, so this page now
+     does the same: a single "Resize keyboard" row, carrying the current height,
+     that opens `ResizeKeysPage`. That screen puts the *real* keyboard view on
+     screen — not a faked mock, and not a second copy to keep in step — and pairs
+     it with a −/+ height stepper (34–60 dp in 2 dp steps; it writes the same
+     `keyHeight` the board renders as dp) and a Letters / Numbers / Symbols / Fn
+     switch over the board's own modes, Fn only appearing when the Fn key is on.
+     The switch is two-way: the preview now accepts a *controlled* mode, so
+     tapping "?123", "123", "ABC" or Fn inside the preview moves the switch too,
+     instead of the board and the switch overwriting each other. Two things from
+     FUTO's screen were deliberately not copied: the tip box with the resize
+     instructions inside it, and the reset entry behind a close (×) icon. The
+     removed switches are still reachable — Number row, Special characters, Key
+     preview popup and Fn live in Appearance, Autocorrect in Prediction. The
+     settings-list subtitle moved with the page ("Layout and key behavior" →
+     "Keyboard size and layout modes"). Compile verification pending.
+
+67. `[x]` **"Long-press keys & spacebar" opens FUTO's third screen — three groups,
+     no more.** Under the resize row sits FUTO's other Keyboard-settings entry,
+     and it now leads somewhere: `LongPressKeysPage`, holding exactly the three
+     groups asked for and none of FUTO's extras (no long-press key-order editor,
+     no key-hints switch). **Backspace** is the "Hold to delete words" switch over
+     "Swipe to delete" (Off / Characters / Words); **Spacebar** is "Swipe"
+     (Off / Move cursor / Switch language) over "Hold" (Move cursor / Switch
+     language — a hold always does something, so Off is not offered, as in FUTO);
+     **Long press duration** is a −/+ stepper over FUTO's 100–700 ms range with
+     its 25 ms steps and 300 ms default. Defaults follow FUTO: delete-hold off,
+     swipe-to-delete Characters, spacebar swipe Move cursor, spacebar hold Switch
+     language. Switches and pickers reuse `SwitchRow`, `SegControl` and the new
+     shared `StepperRow` (lifted out of the resize screen so both screens use the
+     same control), and every change writes a real DataStore preference
+     (`backspaceHoldWords`, `backspaceSwipe`, `spacebarSwipe`, `spacebarHold`,
+     `longPressMs`).
+
+     **Honest state: the preferences are stored and shown, but the keyboard does
+     not act on them yet.** The delete key still repeats single-character deletes
+     and the spacebar has no slide action, so this screen is the design and the
+     saved model, not a working feature. The wiring is the next step and needs
+     three separate pieces of core work that this entry does not claim: a custom
+     long-press timeout in the key gesture modifier (today the platform's ~500 ms
+     via `combinedClickable` decides), a word-delete action the delete key's
+     hold-repeat can call (today `onRepeat` is plain `onDelete`), and slide
+     tracking plus word selection on the backspace and spacebar in
+     `PaperLimeKeyboardView`/the IME service. Compile verification pending.
+
+68. `[x]` **Two more switches under the "Keyboard & typing" entries — one real, one
+     saved.** FUTO's keyboard screen puts its plain toggles below the entries that
+     open a screen, in the same list, and ours now does too: under "Resize keyboard"
+     and "Long-press keys & spacebar" sit **Inline autofill** (on by default, FUTO's
+     own default) and **Hide when USB keyboard is detected** (off by default, also
+     FUTO's default). FUTO's "Quick period key" sits between them and is deliberately
+     skipped, as asked.
+
+     **Hide when USB is wired and real.** `PaperLimeKeyboardService.onEvaluateInputViewShown()`
+     used to be a hard `true`, so the soft keyboard always appeared even with a USB
+     or Bluetooth keyboard attached — a deliberate choice, pinned by a unit test.
+     It now answers `shouldShowInputView(prefs.hideWhenHardKeyboard, configuration)`:
+     with the switch off the answer is unconditionally `true` (byte-for-byte the old
+     behaviour, so nobody who ignores the switch sees any change), and with it on a
+     hard keyboard that is attached and not folded away keeps the soft one hidden.
+     The rule lives in a pure function, `isHardwareKeyboardAttached(configuration)`,
+     which is precisely the condition the platform's own `InputMethodService` uses to
+     suppress the soft input — so the switch cannot quietly drift into a *different*
+     rule than the one it claims to stand for, and the platform already re-asks on
+     configuration changes, so plugging a keyboard in or out needs no extra wiring.
+     `ImeHardwareKeyboardTest` grew from one case to four: the old "we always show"
+     assertion is now the switch-off case, a new case pins that the switch-on answer
+     hides exactly where a plain IME hides, and two cases walk the truth table
+     (no hard keys, folded-away keyboard, QWERTY and 12-key boards).
+
+     **Inline autofill is a real switch over a preference that nothing reads yet.**
+     It defaults on, exactly like FUTO, and it saves and reloads — but no chip can
+     appear, because we never call `InputConnection.requestInlineSuggestions`, and
+     the suggestion strip has no path for the platform `View`s that come back. FUTO's
+     version needs `androidx.autofill:autofill` (a new dependency), an inline-chip
+     drawable, a request spec built from our palette, and `AndroidView` interop
+     inside the Compose strip. That is a separate, larger change — and one that only
+     does anything on Android 11+ *and* only if the phone actually has a password
+     manager, so it is hard to tell "off" from "broken" — so it is left for its own
+     step rather than guessed blind here. Until then this switch is honest about
+     being a stored choice, not a working feature. Compile verification pending.
+
+69. `[x]` **Auto-capitalization — a real setting, not a stored one.** FUTO keeps
+     "Auto-capitalization" ("Capitalize the first word of each sentence") on its
+     *Typing* screen; we keep one page for both, so the switch sits with the other
+     switches on "Keyboard & typing", between the two screen entries and Inline
+     autofill. It defaults **on**, like FUTO.
+
+     The board has never capitalized anything by itself: `shiftState` started OFF
+     and only the user's shift key ever changed it — `SuggestionCase` could restore
+     a capital the user had typed, but nothing ever *created* one. The feature is
+     built on Android's own judgement rather than a rule of our own: the service
+     calls `InputConnection.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES)`, which
+     is the platform's answer to "does a sentence start at the caret?". That answer
+     is published as `AutoShiftHint(wanted, epoch)` and the board raises Shift when
+     it says so.
+
+     Three details matter. (1) The hint carries an **epoch** that ticks on every
+     re-check, because two sentences in a row both want a capital and a board that
+     only watched the boolean would miss the second one. (2) The board only arms
+     Shift when its own state is OFF, so a user's Caps Lock is never cancelled and a
+     deliberate shift-off is never overridden — the next sentence is when the board
+     gets a say again. (3) Re-checks happen where the sentence can actually change:
+     when the keyboard comes up for a field, after we commit, delete or press Enter,
+     and in `onUpdateSelection` when the caret moves. With the setting off the board
+     ignores the hint entirely, so the plumbing is inert noise rather than a
+     behaviour change.
+
+     `AutoCapitalizationTest` pins our reading of the caps-mode mask against
+     `TextUtils.getCapsMode` itself ("Hello. " wants a capital, "Hello the" does
+     not), so the board cannot drift away from where Android thinks sentences
+     begin; `KeyboardPrefsTest` pins the on-by-default. Compile verification pending,
+     and on-device feel (does the shift key ever fight the user?) is unverified —
+     items 27 and 28.
+
+70. `[x]` **Emoji Suggestions — a real suggestion, over our own small word list.**
+     FUTO's row (title "Emoji Suggestions", subtitle "Suggest emojis while you're
+     typing", default on) sits above Auto-capitalization on its *Typing* screen, so
+     the switch sits above ours too. It defaults **on**, like FUTO.
+
+     FUTO builds this out of a dictionary of emoji shortcuts: type a word that is a
+     known shortcut and the emoji is offered in the strip. The mechanism is
+     reproduced — `EmojiSuggestions.forTypedWord` matches the word being typed and
+     `withSuggestion` puts the emoji in front of the engine's candidates, still
+     capped at `SuggestionPlanner.MAX_CANDIDATES` (the emoji takes the top slot, the
+     lowest-ranked word gives up its place) — but **the list is ours and small**:
+     about forty hand-written words (love, happy, laugh, thanks, pizza, coffee,
+     sleep, fireworks, ...), not a copy of any emoji project's data and not every
+     emoji name in Unicode. That is the honest limit of the setting: it is a
+     shortcut list, not a picture search, and a word that is not on the list simply
+     gets no emoji. Two-letter words are deliberately excluded, FUTO's own guard:
+     "it" must stay the word "it" and not become a flag.
+
+     Tapping the emoji is *not* tapping a word: the handler commits the emoji (with
+     a trailing space, like a word suggestion) and records it in the emoji Recents,
+     but never calls `learnWord` — promoting a pictograph into the learning
+     dictionary would poison the suggestion engine and next-word hints for real
+     words. Matching is whole-word and case-insensitive, so nothing flashes mid-word
+     and "Love" at the start of a sentence still offers ❤️. `EmojiSuggestionsTest`
+     pins the known words, the case folding, the two-letter and partial-word
+     refusals, and the front-of-list placement. Compile verification pending, and
+     the switch only shows anything when the strip itself is on (the same coupling
+     FUTO's action bar has).
+
 ## Constraints
 
 - Rust core stays 100% original / cleanroom.

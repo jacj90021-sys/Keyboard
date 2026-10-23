@@ -82,7 +82,7 @@ fun SettingsScreen(
     val entries = listOf(
         SettingsEntry("Languages & layouts", "Choose languages and keyboard layouts", Icons.Default.Language, "languages", "English (US)"),
         SettingsEntry("Appearance", "Themes, height and key style", Icons.Default.Palette, "appearance"),
-        SettingsEntry("Keyboard & typing", "Layout and key behavior", Icons.Default.Keyboard, "typing"),
+        SettingsEntry("Keyboard & typing", "Keyboard size and layout modes", Icons.Default.Keyboard, "typing"),
         SettingsEntry("Swipe typing", "Gesture and glide typing", Icons.Default.TouchApp, "swipe"),
         SettingsEntry("Text prediction", "Suggestions and correction", Icons.Default.TextFields, "prediction"),
         SettingsEntry("Voice input", "Dictation and voice typing", Icons.Default.Mic, "voice"),

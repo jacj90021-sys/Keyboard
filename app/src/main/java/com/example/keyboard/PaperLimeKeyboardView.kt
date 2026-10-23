@@ -26,6 +26,12 @@ import java.io.File
 fun PaperLimeKeyboardView(
     palette: KeyboardPalette,
     prefs: KeyboardPrefs,
+    // Auto-capitalization: the IME service asks Android whether the caret sits at
+    // the start of a sentence and hands the answer in here. `autoShiftEpoch` ticks
+    // on every re-check, so Shift re-arms for each new sentence even though the
+    // answer is the same "yes" every time. Previews and tests get "no".
+    autoShiftWanted: Boolean = false,
+    autoShiftEpoch: Long = 0,
     onCommitText: (String) -> Unit,
     onDelete: () -> Unit,
     onEnter: () -> Unit,
@@ -49,10 +55,32 @@ fun PaperLimeKeyboardView(
     onStopVoice: () -> Unit = {},
     // Previews (onboarding / appearance) keep the keyboard visual-only: the
     // toolbar "More" (three dots) must not replace the view with All Actions.
-    preview: Boolean = false
+    preview: Boolean = false,
+    // A preview host can own the layout mode (the resize screen offers its own
+    // mode switcher): the board then follows [previewMode] and reports every
+    // change back through [onPreviewModeChange], so tapping "?123" inside the
+    // preview moves the switcher too. Left null — every other caller — the board
+    // owns its mode exactly as before.
+    previewMode: KeyboardMode? = null,
+    onPreviewModeChange: (KeyboardMode) -> Unit = {}
 ) {
-    var mode by rememberSaveable { mutableStateOf(KeyboardMode.QWERTY) }
+    var internalMode by rememberSaveable { mutableStateOf(KeyboardMode.QWERTY) }
+    val mode = previewMode ?: internalMode
+    // Single funnel for every layout change, so a controlled preview host stays
+    // in sync with the keys instead of the board and the switcher overwriting
+    // each other.
+    val setMode: (KeyboardMode) -> Unit = { next ->
+        if (previewMode != null) onPreviewModeChange(next) else internalMode = next
+    }
     var shiftState by rememberSaveable { mutableStateOf(ShiftState.OFF) }
+    // Auto-capitalization: raise Shift when Android says a sentence starts here —
+    // but never fight the user. Caps Lock stays put, and a Shift the user turned
+    // off by hand is left alone until the next sentence asks again.
+    LaunchedEffect(autoShiftEpoch, prefs.autoCap) {
+        if (prefs.autoCap && autoShiftWanted && shiftState == ShiftState.OFF) {
+            shiftState = ShiftState.SHIFT
+        }
+    }
     var overlay by rememberSaveable { mutableStateOf(OverlayView.NONE) }
     var isToolbarExpanded by rememberSaveable { mutableStateOf(prefs.startOpen) }
     var fnLongOverlay by rememberSaveable { mutableStateOf(false) }
@@ -103,6 +131,20 @@ fun PaperLimeKeyboardView(
                 previousWord = lastCommittedWord,
                 suggest = NativeEngineBridge::dictionarySuggest
             )
+        }
+    }
+    // Emoji suggestions: a word we know an emoji for gets that emoji in front of
+    // the word suggestions, so "love" offers ❤️ before anything else. The emoji is
+    // never learned as a word — see the tap handler below. Remembered so the board
+    // does not rebuild the list on every recomposition.
+    val emojiSuggestion: String? = remember(currentPrefix, prefs.suggestEmojis) {
+        if (prefs.suggestEmojis) EmojiSuggestions.forTypedWord(currentPrefix) else null
+    }
+    val stripSuggestions: List<String> = remember(emojiSuggestion, dictionaryCandidates) {
+        if (emojiSuggestion == null) {
+            dictionaryCandidates
+        } else {
+            EmojiSuggestions.withSuggestion(currentPrefix, dictionaryCandidates)
         }
     }
     // Prefetch the autocorrect verdict while the word is being typed, so swinging
@@ -199,7 +241,7 @@ fun PaperLimeKeyboardView(
     // Turning the Fn key off must immediately leave the Fn layout / Fn suggestions.
     LaunchedEffect(prefs.fn) {
         if (!prefs.fn) {
-            if (mode == KeyboardMode.FN) mode = KeyboardMode.QWERTY
+            if (mode == KeyboardMode.FN) setMode(KeyboardMode.QWERTY)
             fnLongOverlay = false
         }
     }
@@ -324,13 +366,15 @@ fun PaperLimeKeyboardView(
             )
         }
 
-        // Suggestions Bar
-        if (prefs.suggestions && !overlayOpen) {
+        // Suggestions Bar. Not gated on `suggestions` alone: the Fn key puts its
+        // Esc / Ctrl chips here too, so the strip must exist whenever Fn is on
+        // even if word suggestions are off (it is then an empty state until Fn).
+        if (prefs.showStrip && !overlayOpen) {
             SuggestionsBar(
                 palette = palette,
                 isExpanded = isToolbarExpanded,
                 isFnMode = mode == KeyboardMode.FN || fnLongOverlay,
-                suggestionsOverride = if (mode == KeyboardMode.FN || fnLongOverlay) emptyList() else dictionaryCandidates,
+                suggestionsOverride = if (mode == KeyboardMode.FN || fnLongOverlay) emptyList() else stripSuggestions,
                 showChevron = showChevron,
                 onToggleExpand = {
                     isToolbarExpanded = !isToolbarExpanded
@@ -340,6 +384,16 @@ fun PaperLimeKeyboardView(
                     if (mode == KeyboardMode.FN || fnLongOverlay) {
                         if (word == "Tab") onCommitText("\t")
                         else onCommitText("[$word]")
+                    } else if (word == emojiSuggestion) {
+                        // An emoji finishes the word like a word suggestion does,
+                        // but it is not a word: it must not be promoted into the
+                        // learning dictionary, and it is no help as next-word
+                        // context. It is remembered in the picker's Recent tab,
+                        // and a trailing space keeps typing flowing.
+                        currentPrefix = ""
+                        rawPrefix = ""
+                        onEmojiUsed(word)
+                        onCommitText("$word ")
                     } else {
                         // Accepting a suggestion finishes the word: restore the
                         // user's capitalisation and reset the typing state so the
@@ -395,11 +449,13 @@ fun PaperLimeKeyboardView(
                                     onAction("voice")
                                 }
                                 "modes" -> {
-                                    mode = when (mode) {
-                                        KeyboardMode.QWERTY -> KeyboardMode.NUMPAD
-                                        KeyboardMode.NUMPAD -> KeyboardMode.FN
-                                        else -> KeyboardMode.QWERTY
-                                    }
+                                    setMode(
+                                        when (mode) {
+                                            KeyboardMode.QWERTY -> KeyboardMode.NUMPAD
+                                            KeyboardMode.NUMPAD -> KeyboardMode.FN
+                                            else -> KeyboardMode.QWERTY
+                                        }
+                                    )
                                     overlay = OverlayView.NONE
                                 }
                                 // There is exactly one shipped dictionary, so
@@ -484,11 +540,11 @@ fun PaperLimeKeyboardView(
                                 onSymbolsClick = {
                                     fnLongOverlay = false
                                     overlay = OverlayView.NONE
-                                    mode = KeyboardMode.SYMBOLS_1
+                                    setMode(KeyboardMode.SYMBOLS_1)
                                 },
                                 onFnClick = {
                                     fnLongOverlay = false
-                                    mode = KeyboardMode.FN
+                                    setMode(KeyboardMode.FN)
                                 },
                                 onFnLongClick = { fnLongOverlay = !fnLongOverlay },
                                 isFnLongActive = fnLongOverlay,
@@ -504,14 +560,14 @@ fun PaperLimeKeyboardView(
                                 config = config,
                                 page = 1,
                                 onKeyClick = { trackedCommit(it) },
-                                onSwitchPage = { mode = KeyboardMode.SYMBOLS_2 },
+                                onSwitchPage = { setMode(KeyboardMode.SYMBOLS_2) },
                                 onLettersClick = {
                                     fnLongOverlay = false
-                                    mode = KeyboardMode.QWERTY
+                                    setMode(KeyboardMode.QWERTY)
                                 },
                                 onNumpadClick = {
                                     fnLongOverlay = false
-                                    mode = KeyboardMode.NUMPAD
+                                    setMode(KeyboardMode.NUMPAD)
                                 },
                                 onBackspaceClick = trackedDelete,
                                 onSpaceClick = { trackedCommit(" ") },
@@ -525,14 +581,14 @@ fun PaperLimeKeyboardView(
                                 config = config,
                                 page = 2,
                                 onKeyClick = { trackedCommit(it) },
-                                onSwitchPage = { mode = KeyboardMode.SYMBOLS_1 },
+                                onSwitchPage = { setMode(KeyboardMode.SYMBOLS_1) },
                                 onLettersClick = {
                                     fnLongOverlay = false
-                                    mode = KeyboardMode.QWERTY
+                                    setMode(KeyboardMode.QWERTY)
                                 },
                                 onNumpadClick = {
                                     fnLongOverlay = false
-                                    mode = KeyboardMode.NUMPAD
+                                    setMode(KeyboardMode.NUMPAD)
                                 },
                                 onBackspaceClick = trackedDelete,
                                 onSpaceClick = { trackedCommit(" ") },
@@ -547,9 +603,9 @@ fun PaperLimeKeyboardView(
                                 onKeyClick = { trackedCommit(it) },
                                 onLettersClick = {
                                     fnLongOverlay = false
-                                    mode = KeyboardMode.QWERTY
+                                    setMode(KeyboardMode.QWERTY)
                                 },
-                                onSymbolsClick = { mode = KeyboardMode.SYMBOLS_1 },
+                                onSymbolsClick = { setMode(KeyboardMode.SYMBOLS_1) },
                                 onEnterClick = trackedEnter
                             )
                         }
@@ -561,7 +617,7 @@ fun PaperLimeKeyboardView(
                                 onKeyClick = { f -> currentPrefix = ""; rawPrefix = ""; onCommitText("[$f]") },
                                 onLettersClick = {
                                     fnLongOverlay = false
-                                    mode = KeyboardMode.QWERTY
+                                    setMode(KeyboardMode.QWERTY)
                                 },
                                 onBackspaceClick = trackedDelete,
                                 onSpaceClick = { trackedCommit(" ") },

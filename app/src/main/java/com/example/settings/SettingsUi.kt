@@ -10,7 +10,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -266,6 +268,95 @@ fun ThemeSwatch(choice: ThemeChoice, selected: Boolean, modifier: Modifier = Mod
             fontWeight = FontWeight.Bold,
             fontSize = 11.5.sp,
             textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * The chunky − / value / + control used for numeric settings (key height, long-press
+ * duration). [caption] labels the current value ("Normal", "Default", …); returning
+ * an empty caption leaves that line out. Step and clamping happen here so every
+ * caller gets the same bounds behaviour.
+ */
+@Composable
+fun StepperRow(
+    value: Int,
+    min: Int,
+    max: Int,
+    step: Int,
+    unit: String,
+    modifier: Modifier = Modifier,
+    caption: (Int) -> String = { "" },
+    onValue: (Int) -> Unit
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        StepButton(
+            icon = Icons.Default.Remove,
+            contentDescription = "Decrease",
+            enabled = value > min,
+            onClick = { onValue((value - step).coerceAtLeast(min)) }
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Tokens.Surface)
+                .border(1.dp, Tokens.Line, RoundedCornerShape(18.dp))
+                .padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "$value $unit",
+                color = Tokens.Ink,
+                fontFamily = Manrope,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 21.sp,
+                letterSpacing = (-0.6).sp
+            )
+            val cap = caption(value)
+            if (cap.isNotEmpty()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = cap,
+                    color = Tokens.Muted,
+                    fontFamily = DmSans,
+                    fontSize = 11.5.sp
+                )
+            }
+        }
+        StepButton(
+            icon = Icons.Default.Add,
+            contentDescription = "Increase",
+            enabled = value < max,
+            onClick = { onValue((value + step).coerceAtMost(max)) }
+        )
+    }
+}
+
+@Composable
+private fun StepButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .background(if (enabled) Tokens.Ink else Tokens.Chip)
+            .clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) Tokens.Lime else Tokens.Muted,
+            modifier = Modifier.size(20.dp)
         )
     }
 }

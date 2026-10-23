@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.SpaceBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,7 +110,7 @@ fun TopBarPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack
         SwitchCard {
             SwitchRow(
                 title = "Word suggestions",
-                subtitle = "Yes · Okay · Thanks above the keys",
+                subtitle = "Candidates above the keys",
                 checked = prefs.suggestions,
                 onToggle = { scope.launch { repository.setBool("suggestions", !prefs.suggestions) } }
             )
@@ -121,9 +124,9 @@ fun TopBarPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack
             Divider()
             SwitchRow(
                 title = "Expand arrow",
-                subtitle = "When both are on, ^ shows or hides the toolbar",
+                subtitle = "The ^ arrow shows or hides the toolbar",
                 checked = prefs.arrow,
-                enabled = prefs.toolbar && prefs.suggestions,
+                enabled = prefs.toolbar && prefs.showStrip,
                 onToggle = { scope.launch { repository.setBool("arrow", !prefs.arrow) } }
             )
             Divider()
@@ -131,7 +134,7 @@ fun TopBarPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack
                 title = "Start with toolbar open",
                 subtitle = "Off = only word suggestions at first",
                 checked = prefs.startOpen,
-                enabled = prefs.toolbar && prefs.suggestions && prefs.arrow,
+                enabled = prefs.toolbar && prefs.showStrip && prefs.arrow,
                 onToggle = { scope.launch { repository.setBool("startOpen", !prefs.startOpen) } }
             )
         }
@@ -139,44 +142,81 @@ fun TopBarPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack
 }
 
 @Composable
-fun TypingPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack: () -> Unit) {
-    val scope = rememberCoroutineScope()
-
+fun TypingPage(
+    prefs: KeyboardPrefs,
+    repository: KeyboardPrefsRepository,
+    onBack: () -> Unit,
+    onOpenResize: () -> Unit,
+    onOpenLongPress: () -> Unit
+) {
+    // The page is a short list now, the way FUTO's Keyboard settings leads with
+    // "Resize Keyboard" and "Long-Press Keys & Spacebar", then hands the plain
+    // switches the same list. "Emoji Suggestions" and "Auto-capitalization" come
+    // from FUTO's Typing screen; we keep one page for both. The switches that used
+    // to live here are not gone either: Number row, Special characters, Key preview
+    // popup and Fn are in Appearance, and Autocorrect is in Prediction.
     PageScaffold(title = "Keyboard & typing", onBack = onBack) {
+        val scope = rememberCoroutineScope()
         SwitchCard {
+            SettingRow(
+                icon = Icons.Default.OpenInFull,
+                title = "Resize keyboard",
+                subtitle = "Keyboard height and layout modes, with a live preview",
+                trailingValue = "${prefs.keyHeight} dp",
+                onClick = onOpenResize
+            )
+            Divider()
+            // FUTO's second entry on this screen: its own screen, three groups
+            // (backspace, spacebar, long-press duration).
+            SettingRow(
+                icon = Icons.Default.SpaceBar,
+                title = "Long-press keys & spacebar",
+                subtitle = "Backspace and spacebar gestures, and how long a long press is",
+                onClick = onOpenLongPress
+            )
+            // FUTO puts its plain switches below the two entries that open a
+            // screen, in the same list. "Emoji Suggestions" and
+            // "Auto-capitalization" come from FUTO's *Typing* screen, the one we
+            // fold into this page, so they sit with the switches that come from its
+            // Keyboard screen.
+            Divider()
             SwitchRow(
-                title = "Number row",
-                subtitle = "Digits always on top",
-                checked = prefs.numRow,
-                onToggle = { scope.launch { repository.setBool("numRow", !prefs.numRow) } }
+                title = "Emoji Suggestions",
+                subtitle = "Suggest emojis while you're typing",
+                checked = prefs.suggestEmojis,
+                onToggle = {
+                    scope.launch { repository.setSuggestEmojis(!prefs.suggestEmojis) }
+                }
             )
             Divider()
             SwitchRow(
-                title = "Key preview popup",
-                subtitle = "Show a bubble when you press",
-                checked = prefs.popups,
-                onToggle = { scope.launch { repository.setBool("popups", !prefs.popups) } }
+                title = "Auto-capitalization",
+                subtitle = "Capitalize the first word of each sentence",
+                checked = prefs.autoCap,
+                onToggle = {
+                    scope.launch { repository.setAutoCap(!prefs.autoCap) }
+                }
+            )
+            // FUTO's own order in that list is inline autofill, "Quick period key",
+            // then hide-when-USB. We skip Quick period key by request, so these two
+            // sit next to each other where FUTO has three.
+            Divider()
+            SwitchRow(
+                title = "Inline autofill",
+                subtitle = "Password manager and quick-reply chips above the keys",
+                checked = prefs.inlineAutofill,
+                onToggle = {
+                    scope.launch { repository.setInlineAutofill(!prefs.inlineAutofill) }
+                }
             )
             Divider()
             SwitchRow(
-                title = "Autocorrect",
-                subtitle = "Fix obvious typos when you press space",
-                checked = prefs.autoCorrect,
-                onToggle = { scope.launch { repository.setBool("autoCorrect", !prefs.autoCorrect) } }
-            )
-            Divider()
-            SwitchRow(
-                title = "Special characters",
-                subtitle = "Extra symbols on keys",
-                checked = prefs.special,
-                onToggle = { scope.launch { repository.setBool("special", !prefs.special) } }
-            )
-            Divider()
-            SwitchRow(
-                title = "Fn key",
-                subtitle = "Extra key for developers",
-                checked = prefs.fn,
-                onToggle = { scope.launch { repository.setBool("fn", !prefs.fn) } }
+                title = "Hide when USB keyboard is detected",
+                subtitle = "Keep the on-screen keyboard away while a real keyboard is plugged in",
+                checked = prefs.hideWhenHardKeyboard,
+                onToggle = {
+                    scope.launch { repository.setHideWhenHardKeyboard(!prefs.hideWhenHardKeyboard) }
+                }
             )
         }
     }

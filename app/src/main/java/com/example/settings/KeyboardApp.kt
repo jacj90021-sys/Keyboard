@@ -74,7 +74,16 @@ fun KeyboardApp(
                 )
 
                 "topbar" -> TopBarPage(prefs, repository) { page = null }
-                "typing" -> TypingPage(prefs, repository) { page = null }
+                "typing" -> TypingPage(
+                    prefs = prefs,
+                    repository = repository,
+                    onBack = { page = null },
+                    onOpenResize = { page = "resize" },
+                    onOpenLongPress = { page = "longpress" }
+                )
+
+                "resize" -> ResizeKeysPage(prefs, repository) { page = "typing" }
+                "longpress" -> LongPressKeysPage(prefs, repository) { page = "typing" }
                 "voice" -> VoicePage { page = null }
                 "prediction" -> PredictionPage(prefs, repository) { page = null }
                 "swipe" -> SwipePage(prefs, repository) { page = null }
