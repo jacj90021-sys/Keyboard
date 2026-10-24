@@ -17,6 +17,7 @@ import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -215,8 +216,14 @@ class PaperLimeInputMethodService : InputMethodService(),
     }
 
     override fun onCreateInputView(): View {
-        // Reuse one view.
-        inputView?.let { return it }
+        // Reuse one view. If Android still has it attached to a previous window
+        // (e.g. after a crash/re-show), detach it before handing it back; otherwise
+        // setInputView() will add it to a new parent and throw
+        // "The specified child already has a parent".
+        inputView?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+            return view
+        }
 
         val composeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@PaperLimeInputMethodService)
