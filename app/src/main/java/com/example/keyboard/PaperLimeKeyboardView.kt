@@ -22,6 +22,11 @@ import com.example.keyboard.native.SuggestionCase
 import com.example.keyboard.native.SuggestionPlanner
 import java.io.File
 
+
+private data class AutoCorrectUndo(
+    val originalRaw: String,
+    val correctedWord: String
+)
 @Composable
 fun PaperLimeKeyboardView(
     palette: KeyboardPalette,
@@ -107,6 +112,12 @@ fun PaperLimeKeyboardView(
     var currentPrefix by remember { mutableStateOf("") }
     var rawPrefix by remember { mutableStateOf("") }
     var lastCommittedWord by remember { mutableStateOf("") }
+    // Undo autocorrect on backspace: if the last space-triggered autocorrect replaced
+    // the typed word, the next backspace deletes the corrected word and restores
+    // the original typed form.
+    var lastAutoCorrect by remember { mutableStateOf<AutoCorrectUndo?>(null) }
+    var lastPastedOrInserted by remember { mutableStateOf(false) }
+    var lastInsertedLength by remember { mutableStateOf(0) }
     // Gesture typing only engages once the native engine has actually loaded and
     // mapped a dictionary, so the host-JVM/test path is completely unaffected.
     var engineReady by remember { mutableStateOf(NativeEngineBridge.isLoaded()) }
@@ -174,11 +185,14 @@ fun PaperLimeKeyboardView(
                     if (correction != null && correction != currentPrefix) {
                         val typedLength =
                             if (rawPrefix.isNotEmpty()) rawPrefix.length else currentPrefix.length
+                        val originalRaw = if (rawPrefix.isNotEmpty()) rawPrefix else currentPrefix
                         repeat(typedLength) { onDelete() }
                         onCommitText(SuggestionCase.apply(rawPrefix, correction))
+                        lastAutoCorrect = AutoCorrectUndo(originalRaw = originalRaw, correctedWord = correction)
                         lastCommittedWord = correction
                         learnWord(correction)
                     } else {
+                        lastAutoCorrect = null
                         lastCommittedWord = currentPrefix
                         // Learn correctly typed words (only if they are real entries).
                         if (NativeEngineBridge.dictionaryExactValue(currentPrefix) != null) {
@@ -196,12 +210,47 @@ fun PaperLimeKeyboardView(
             text.length == 1 && text[0].isLetter() -> rawPrefix + text
             else -> ""
         }
+        if (text == " ") {
+            lastPastedOrInserted = false
+            lastInsertedLength = 0
+        } else if (text.length > 1) {
+            lastPastedOrInserted = true
+            lastInsertedLength = text.length
+        } else if (text.isNotEmpty() && !text[0].isLetter()) {
+            lastPastedOrInserted = true
+            lastInsertedLength = text.length
+        } else {
+            lastPastedOrInserted = false
+            lastInsertedLength = 0
+        }
         onCommitText(text)
     }
     val trackedDelete: () -> Unit = {
-        currentPrefix = if (currentPrefix.isNotEmpty()) currentPrefix.dropLast(1) else ""
-        rawPrefix = if (rawPrefix.isNotEmpty()) rawPrefix.dropLast(1) else ""
-        onDelete()
+        val undo = lastAutoCorrect
+        if (undo != null && currentPrefix == undo.correctedWord) {
+            // Undo autocorrect: remove corrected word and restore original typed form.
+            repeat(undo.correctedWord.length) { onDelete() }
+            currentPrefix = undo.originalRaw.lowercase()
+            rawPrefix = undo.originalRaw
+            onCommitText(SuggestionCase.apply(undo.originalRaw, undo.originalRaw))
+            lastAutoCorrect = null
+            lastCommittedWord = ""
+            lastPastedOrInserted = false
+            lastInsertedLength = 0
+        } else if (lastPastedOrInserted && lastInsertedLength > 0 && currentPrefix.isEmpty()) {
+            // Delete inserted/pasted text in chunks (backspace deletes what was just inserted/pasted).
+            repeat(lastInsertedLength) { onDelete() }
+            lastPastedOrInserted = false
+            lastInsertedLength = 0
+            lastAutoCorrect = null
+        } else {
+            lastAutoCorrect = null
+            lastPastedOrInserted = false
+            lastInsertedLength = 0
+            currentPrefix = if (currentPrefix.isNotEmpty()) currentPrefix.dropLast(1) else ""
+            rawPrefix = if (rawPrefix.isNotEmpty()) rawPrefix.dropLast(1) else ""
+            onDelete()
+        }
     }
     val trackedEnter: () -> Unit = {
         currentPrefix = ""
