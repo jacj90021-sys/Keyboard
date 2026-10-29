@@ -82,10 +82,40 @@ fun SwipePage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack:
         }
 
         Spacer(Modifier.height(20.dp))
+        Label("Sensitivity")
+        SwitchCard {
+            val labels = listOf("High", "Medium", "Low")
+            val sub = listOf("Easier to trigger", "Balanced", "Less accidental swipes")
+            SettingRow(
+                icon = Icons.Default.TouchApp,
+                title = "Swipe sensitivity",
+                subtitle = sub.getOrElse(prefs.swipeSensitivity) { "Balanced" },
+                onClick = { }
+            )
+            Divider()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                labels.forEachIndexed { idx, label ->
+                    val sel = prefs.swipeSensitivity == idx
+                    androidx.compose.material3.FilterChip(
+                        selected = sel,
+                        onClick = { scope.launch { repository.setInt("swipeSensitivity", idx) } },
+                        label = { Text(label) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
         Label("Status")
         SwitchCard {
             SettingRow(
-                icon = Icons.Default.TouchApp,
+                icon = Icons.Default.Memory,
                 title = "Gesture decoder",
                 subtitle = "Native stroke matching",
                 trailingValue = if (loaded) "Available" else "Unavailable"
@@ -95,8 +125,8 @@ fun SwipePage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack:
         Spacer(Modifier.height(20.dp))
         Label("Notes")
         SwitchCard {
-            Hint("Trips shorter than a deliberate stroke are treated as taps, so " +
-                "single-key presses are never swallowed by swipe typing.")
+            Hint("If you want it to trigger easier, set sensitivity to High. " +
+                "Short taps are still treated as key presses.")
         }
     }
 }

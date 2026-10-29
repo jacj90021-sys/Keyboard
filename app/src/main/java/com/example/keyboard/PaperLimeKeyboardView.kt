@@ -347,9 +347,14 @@ fun PaperLimeKeyboardView(
     // overlay, before the dictionary has loaded, or when the user turned it off.
     val swipeEnabled = prefs.swipeTyping && !preview && engineReady &&
         mode == KeyboardMode.QWERTY && overlay == OverlayView.NONE
+    val swipeMinTravelDp = when (prefs.swipeSensitivity) {
+        0 -> 12.dp // High sensitivity - easier to trigger
+        2 -> 28.dp // Low sensitivity - harder to trigger
+        else -> 18.dp // Medium (default)
+    }
     val swipeTyping = Modifier.swipeTyping(
         enabled = swipeEnabled,
-        minTravelPx = with(density) { 24.dp.toPx() }
+        minTravelPx = with(density) { swipeMinTravelDp.toPx() }
     ) { stroke ->
         if (boardSize.width > 0) {
             val grid = GestureLayoutGrid.qwerty(

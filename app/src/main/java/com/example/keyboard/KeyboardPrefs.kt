@@ -27,6 +27,7 @@ object PrefKeys {
     val popups = booleanPreferencesKey("popups")
     val autoCorrect = booleanPreferencesKey("autoCorrect")
     val swipeTyping = booleanPreferencesKey("swipeTyping")
+    val swipeSensitivity = intPreferencesKey("swipeSensitivity")
     val sound = booleanPreferencesKey("sound")
     val haptics = booleanPreferencesKey("haptics")
     val clipboardHistory = booleanPreferencesKey("clipboardHistory")
@@ -98,6 +99,7 @@ data class KeyboardPrefs(
     val popups: Boolean = true,
     val autoCorrect: Boolean = true,
     val swipeTyping: Boolean = true,
+    val swipeSensitivity: Int = 1,
     val sound: Boolean = true,
     val haptics: Boolean = true,
     val clipboardHistory: Boolean = true,
@@ -157,6 +159,7 @@ class KeyboardPrefsRepository(private val context: Context) {
             popups = p[PrefKeys.popups] ?: true,
             autoCorrect = p[PrefKeys.autoCorrect] ?: true,
             swipeTyping = p[PrefKeys.swipeTyping] ?: true,
+            swipeSensitivity = p[PrefKeys.swipeSensitivity] ?: 1,
             sound = p[PrefKeys.sound] ?: true,
             haptics = p[PrefKeys.haptics] ?: true,
             clipboardHistory = p[PrefKeys.clipboardHistory] ?: true,
@@ -234,6 +237,14 @@ class KeyboardPrefsRepository(private val context: Context) {
                 "haptics" -> prefs[PrefKeys.haptics] = value
                 "clipboardHistory" -> prefs[PrefKeys.clipboardHistory] = value
                 "onboardingDone" -> prefs[PrefKeys.onboardingDone] = value
+            }
+        }
+    }
+
+    suspend fun setInt(key: String, value: Int) {
+        context.keyboardDataStore.edit { prefs ->
+            when (key) {
+                "swipeSensitivity" -> prefs[PrefKeys.swipeSensitivity] = value
             }
         }
     }
