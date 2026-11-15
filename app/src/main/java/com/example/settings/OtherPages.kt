@@ -184,6 +184,40 @@ fun ClipboardPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onB
                 checked = prefs.clipboardHistory,
                 onToggle = { scope.launch { repository.setBool("clipboardHistory", !prefs.clipboardHistory) } }
             )
+            Divider()
+            SwitchRow(
+                title = "Save sensitive content",
+                subtitle = "Also keep clips marked as sensitive (passwords, codes)",
+                checked = prefs.clipboardSaveSensitive,
+                onToggle = { scope.launch { repository.setBool("clipboardSaveSensitive", !prefs.clipboardSaveSensitive) } }
+            )
+            Divider()
+            SwitchRow(
+                title = "Confirm before delete",
+                subtitle = "Ask before removing a clip",
+                checked = prefs.clipboardConfirmDelete,
+                onToggle = { scope.launch { repository.setBool("clipboardConfirmDelete", !prefs.clipboardConfirmDelete) } }
+            )
+            Divider()
+            SwitchRow(
+                title = "Pinned clips first",
+                subtitle = "Keep pinned clips at the top of the list",
+                checked = prefs.clipboardPinnedFirst,
+                onToggle = { scope.launch { repository.setBool("clipboardPinnedFirst", !prefs.clipboardPinnedFirst) } }
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+        Label("History size")
+        SwitchCard {
+            StepperRow(
+                value = prefs.clipboardMaxItems,
+                min = 10,
+                max = 100,
+                step = 5,
+                unit = "clips",
+                onValue = { value -> scope.launch { repository.setInt("clipboardMaxItems", value) } }
+            )
         }
 
         Spacer(Modifier.height(20.dp))

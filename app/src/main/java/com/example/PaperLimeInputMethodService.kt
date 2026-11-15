@@ -1,6 +1,7 @@
 package com.example
 
 import android.annotation.SuppressLint
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -35,6 +36,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.compose.runtime.collectAsState
+import com.example.keyboard.ClipItem
 import com.example.keyboard.ClipboardHistory
 import com.example.keyboard.ContextAction
 import com.example.keyboard.CursorMove
@@ -111,25 +113,36 @@ class PaperLimeInputMethodService : InputMethodService(),
     // Android only hands out the *current* primary clip, so the keyboard keeps
     // its own bounded history, captured while the IME view is visible (see
     // ClipboardHistory for the rules).
-    private val clipboardHistory = ClipboardHistory()
-    private val _clipboardItems = MutableStateFlow<List<String>>(emptyList())
-    val clipboardItems: StateFlow<List<String>> = _clipboardItems.asStateFlow()
+    private val clipboardHistory = ClipboardHistory(this) { lifecycleScope }
+    private val _clipboardItems = MutableStateFlow(clipboardHistory.items())
+    val clipboardItems: StateFlow<List<ClipItem>> = _clipboardItems.asStateFlow()
     private var clipboardListenerRegistered = false
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         runCatching {
             val manager = getSystemService(ClipboardManager::class.java) ?: return@runCatching
             val clip = manager.primaryClip ?: return@runCatching
             if (clip.itemCount == 0) return@runCatching
+            val description = clip.description
+            val sensitive = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                description.extras
+                    ?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false) == true
+            } else {
+                false
+            }
+            if (sensitive && !_prefs.value.clipboardSaveSensitive) return@runCatching
+            val hasImage = (0 until description.mimeTypeCount)
+                .any { description.getMimeType(it).startsWith("image/") }
+            if (hasImage) return@runCatching
             val text = clip.getItemAt(0).coerceToText(this)?.toString()
             if (clipboardHistory.add(text)) {
-                _clipboardItems.value = clipboardHistory.entries()
+                _clipboardItems.value = clipboardHistory.items()
             }
         }.onFailure { Log.e(TAG, "clipboard capture failed", it) }
     }
 
     // Emoji recents: session-scoped like the clipboard history above. The
     // picker opens on a Recent tab, and this is what feeds ours.
-    private val emojiRecents = EmojiRecents()
+    private val emojiRecents = EmojiRecents(this) { lifecycleScope }
     private val _recentEmojis = MutableStateFlow<List<String>>(emptyList())
     val recentEmojis: StateFlow<List<String>> = _recentEmojis.asStateFlow()
     private fun recordEmoji(emoji: String) {
@@ -210,7 +223,10 @@ class PaperLimeInputMethodService : InputMethodService(),
         prefsRepository = KeyboardPrefsRepository(this)
         lifecycleScope.launch {
             runCatching {
-                prefsRepository.prefs.collect { _prefs.value = it }
+                prefsRepository.prefs.collect { p ->
+                    _prefs.value = p
+                    clipboardHistory.resize(p.clipboardMaxItems)
+                }
             }.onFailure { Log.e(TAG, "prefs collect failed", it) }
         }
     }
@@ -246,11 +262,22 @@ class PaperLimeInputMethodService : InputMethodService(),
                     clipboardClips = clips,
                     recentEmojis = emojis,
                     onEmojiUsed = { this@PaperLimeInputMethodService.recordEmoji(it) },
+                    onEmojiToneChange = { tone ->
+                        lifecycleScope.launch { prefsRepository.setEmojiTone(tone) }
+                    },
                     voiceInput = voice,
                     onStopVoice = { stopVoiceInput() },
                     onClearClipboard = {
                         clipboardHistory.clear()
                         _clipboardItems.value = emptyList()
+                    },
+                    onDeleteClip = { item ->
+                        clipboardHistory.remove(item.text)
+                        _clipboardItems.value = clipboardHistory.items()
+                    },
+                    onTogglePinClip = { item ->
+                        clipboardHistory.togglePin(item.text)
+                        _clipboardItems.value = clipboardHistory.items()
                     },
                     onCommitText = { text ->
                         runCatching {
@@ -628,6 +655,8 @@ class PaperLimeInputMethodService : InputMethodService(),
 
     override fun onFinishInputView(finishing: Boolean) {
         stopVoiceInput()
+        emojiRecents.flush()
+        clipboardHistory.flush()
         try {
             speechRecognizer?.destroy()
             speechRecognizer = null

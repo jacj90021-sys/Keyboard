@@ -23,13 +23,16 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +53,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -71,6 +76,12 @@ import kotlinx.coroutines.launch
  */
 private const val HOLD_INITIAL_DELAY_MS = 400L
 private const val HOLD_REPEAT_INTERVAL_MS = 55L
+
+/** Minimum emoji cell width; the adaptive grid derives the column count from it. */
+private val CELL_MIN_SIZE = 44.dp
+
+/** Fraction of the cell's shorter side that the glyph fills. */
+private const val GLYPH_CELL_FILL = 0.72f
 
 enum class KeyStyle {
     REGULAR,
@@ -812,27 +823,44 @@ fun EmojiPickerGrid(
     palette: KeyboardPalette,
     recentEmojis: List<String> = emptyList(),
     panelHeight: Dp = 300.dp,
+    activeTone: String? = null,
     onClose: () -> Unit,
     onBackspace: () -> Unit = {},
+    onToneSelected: (String) -> Unit = {},
     onEmojiClick: (String) -> Unit
 ) {
-    // Tabs are keyed by title, not index, so prepending a "Recent" tab the moment
-    // the first emoji is used cannot shift the selection out from under the user.
-    val tabs = remember(recentEmojis) {
-        buildList {
+    // One continuous board with a header row per category. Header rows are
+    // full-span grid items, so a category's start index is its header plus the
+    // emoji that came before it.
+    val sections = remember(recentEmojis) {
+        val tabs = buildList {
             if (recentEmojis.isNotEmpty()) add(EmojiTab("Recent", "🕒", recentEmojis))
             emojiCategories.forEachIndexed { index, (glyph, items) ->
                 add(EmojiTab(emojiCategoryNames.getOrElse(index) { glyph }, glyph, items))
             }
         }
+        var cursor = 0
+        tabs.map { tab ->
+            val start = cursor
+            cursor += 1 + tab.items.size
+            EmojiSection(tab.title, tab.glyph, tab.items, start)
+        }
     }
-    var selectedTitle by remember { mutableStateOf("") }
-    val selectedTab = tabs.firstOrNull { it.title == selectedTitle } ?: tabs.first()
-    val gridState = rememberLazyGridState()
 
-    // Jump back to the top whenever the category changes, so a search-free switch
-    // always lands on the first row.
-    LaunchedEffect(selectedTab.title) { gridState.scrollToItem(0) }
+    val gridState = rememberLazyGridState()
+    val stripState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    // The active category is wherever the top of the grid is, not a separate
+    // piece of state that can drift out of sync with the scroll.
+    val firstVisible = gridState.firstVisibleItemIndex
+    val activeIndex = sections.indexOfLast { it.start <= firstVisible }.coerceAtLeast(0)
+    val active = sections.getOrNull(activeIndex)
+
+    // Keep the strip centred on the category the grid is showing.
+    LaunchedEffect(active?.title) {
+        if (activeIndex >= 0) stripState.animateScrollToItem(activeIndex)
+    }
 
     Column(
         modifier = Modifier
@@ -840,8 +868,6 @@ fun EmojiPickerGrid(
             .height(panelHeight)
             .testTag("emoji:panel")
     ) {
-        // Slim header: back chevron + the active category name. This replaces the
-        // floating toolbar row, which the view hides while the panel is open.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -863,7 +889,7 @@ fun EmojiPickerGrid(
                 )
             }
             Text(
-                text = selectedTab.title,
+                text = active?.title.orEmpty(),
                 color = palette.ink,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -873,7 +899,7 @@ fun EmojiPickerGrid(
 
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Fixed(8),
+            columns = GridCells.Adaptive(minSize = CELL_MIN_SIZE),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
             modifier = Modifier
@@ -881,13 +907,28 @@ fun EmojiPickerGrid(
                 .weight(1f)
                 .padding(horizontal = 4.dp)
         ) {
-            items(selectedTab.items) { emo ->
-                EmojiChoiceCell(palette = palette, emoji = emo, onClick = { onEmojiClick(emo) })
+            sections.forEach { section ->
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        text = section.title,
+                        color = palette.inkSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                    )
+                }
+                items(section.items) { emoji ->
+                    EmojiChoiceCell(
+                        palette = palette,
+                        emoji = emoji,
+                        activeTone = activeTone,
+                        onClick = onEmojiClick,
+                        onToneSelected = onToneSelected
+                    )
+                }
             }
         }
 
-        // Bottom navigation: ABC on the left, the scrollable category
-        // strip in the middle, backspace on the right.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -908,14 +949,15 @@ fun EmojiPickerGrid(
             }
 
             LazyRow(
+                state = stripState,
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                itemsIndexed(tabs) { index, tab ->
-                    val isSelected = tab.title == selectedTab.title
+                itemsIndexed(sections) { index, section ->
+                    val isSelected = index == activeIndex
                     Box(
                         modifier = Modifier
                             .size(36.dp)
@@ -925,12 +967,14 @@ fun EmojiPickerGrid(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = { selectedTitle = tab.title }
+                                onClick = {
+                                    scope.launch { gridState.animateScrollToItem(section.start) }
+                                }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = tab.glyph,
+                            text = section.glyph,
                             fontSize = 18.sp,
                             color = if (isSelected) palette.onAccent else palette.inkSecondary
                         )
@@ -938,11 +982,20 @@ fun EmojiPickerGrid(
                 }
             }
 
-            IconButton(
-                onClick = onBackspace,
+            val eraseInput = remember { MutableInteractionSource() }
+            Box(
                 modifier = Modifier
                     .size(40.dp)
                     .testTag("emoji:backspace")
+                    .then(
+                        keyGestureModifier(
+                            interactionSource = eraseInput,
+                            onClick = {},
+                            onLongClick = null,
+                            onRepeat = onBackspace
+                        )
+                    ),
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Backspace,
@@ -957,6 +1010,13 @@ fun EmojiPickerGrid(
 
 private data class EmojiTab(val title: String, val glyph: String, val items: List<String>)
 
+private data class EmojiSection(
+    val title: String,
+    val glyph: String,
+    val items: List<String>,
+    val start: Int
+)
+
 /**
  * One emoji cell. A bare glyph on the board (cells have a ripple, not a filled
  * key), which is what makes the grid read as a picker and not a calculator. A
@@ -966,39 +1026,99 @@ private data class EmojiTab(val title: String, val glyph: String, val items: Lis
 private fun EmojiChoiceCell(
     palette: KeyboardPalette,
     emoji: String,
-    onClick: () -> Unit
+    activeTone: String?,
+    onClick: (String) -> Unit,
+    onToneSelected: (String) -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (pressed) palette.keyBg else Color.Transparent)
-            .combinedClickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text = emoji, fontSize = 24.sp)
+    val shown = remember(emoji, activeTone) { EmojiSkinTones.withTone(emoji, activeTone) }
+    val variants = remember(emoji) { EmojiSkinTones.variantsOf(emoji) }
+    var toneMenu by remember(emoji) { mutableStateOf(false) }
+
+    BoxWithConstraints {
+        // Sized from the cell itself, so the glyph fills the same fraction of
+        // every cell no matter how many columns the width allows.
+        val glyphSize = with(LocalDensity.current) {
+            (minOf(maxWidth, maxHeight).toPx() * GLYPH_CELL_FILL).toSp()
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (pressed) palette.keyBg else Color.Transparent)
+                .combinedClickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClick = { onClick(shown) },
+                    onLongClick = if (variants.isNotEmpty()) {
+                        { toneMenu = true }
+                    } else {
+                        null
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = shown, fontSize = glyphSize)
+        }
+
+        DropdownMenu(
+            expanded = toneMenu,
+            onDismissRequest = { toneMenu = false }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                variants.forEach { variant ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                EmojiSkinTones.modifierOf(variant)?.let(onToneSelected)
+                                onClick(variant)
+                                toneMenu = false
+                            }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = variant, fontSize = glyphSize)
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 fun ClipboardListPanel(
     palette: KeyboardPalette,
-    clips: List<String>,
+    clips: List<ClipItem>,
+    panelHeight: Dp,
+    pinnedFirst: Boolean,
+    confirmDelete: Boolean,
     onClose: () -> Unit,
     onClearAll: () -> Unit,
-    onClipClick: (String) -> Unit
+    onPaste: (ClipItem) -> Unit,
+    onDelete: (ClipItem) -> Unit,
+    onTogglePin: (ClipItem) -> Unit
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<ClipItem?>(null) }
+
+    // Filtering is by substring; pinned-first sorting is stable, so the
+    // newest-first order inside each group is preserved.
+    val visible = remember(clips, query, pinnedFirst) {
+        val filtered = if (query.isBlank()) clips
+        else clips.filter { it.text.contains(query.trim(), ignoreCase = true) }
+        if (pinnedFirst) filtered.sortedByDescending { it.pinned } else filtered
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp)
+            .height(panelHeight)
             .padding(horizontal = 6.dp)
     ) {
         Row(
@@ -1030,29 +1150,54 @@ fun ClipboardListPanel(
                     modifier = Modifier.padding(start = 4.dp)
                 )
             }
-
             TextButton(onClick = onClearAll) {
                 Text("Clear All", color = palette.inkSecondary, fontSize = 11.sp)
             }
         }
 
-        if (clips.isEmpty()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 6.dp),
+            singleLine = true,
+            placeholder = { Text("Search clips", fontSize = 12.sp) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = palette.inkSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = palette.lime,
+                unfocusedBorderColor = palette.line,
+                focusedTextColor = palette.ink,
+                unfocusedTextColor = palette.ink
+            )
+        )
+
+        if (visible.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No clipboard items yet",
+                    text = if (clips.isEmpty()) "No clipboard items yet" else "No matches",
                     color = palette.muted,
                     fontSize = 13.sp
                 )
             }
         } else {
-            Column(
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxSize()
+                contentPadding = PaddingValues(bottom = 6.dp)
             ) {
-                clips.forEach { clip ->
+                items(visible, key = { it.text }) { item ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1062,29 +1207,88 @@ fun ClipboardListPanel(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = { onClipClick(clip) }
+                                onClick = { onPaste(item) },
+                                onLongClick = { onTogglePin(item) }
                             )
                             .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = clip,
-                            color = palette.ink,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "Paste",
-                            color = palette.limeShadow,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.text,
+                                color = palette.ink,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val stamp = relativeTime(item.createdAt)
+                            if (stamp.isNotEmpty()) {
+                                Text(
+                                    text = stamp,
+                                    color = palette.muted,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                        if (item.pinned) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "Pinned",
+                                tint = palette.limeShadow,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .padding(end = 4.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (confirmDelete) pendingDelete = item else onDelete(item)
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete clip",
+                                tint = palette.inkSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete clip?") },
+            text = { Text(target.text.take(40)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(target)
+                        pendingDelete = null
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+/** Compact age label for a clip: "now", "12m ago", "3h ago", "yesterday", "5d ago". */
+private fun relativeTime(millis: Long): String {
+    if (millis <= 0L) return ""
+    val diff = System.currentTimeMillis() - millis
+    if (diff < 0L) return "now"
+    return when {
+        diff < 60_000L -> "now"
+        diff < 3_600_000L -> "${diff / 60_000L}m ago"
+        diff < 86_400_000L -> "${diff / 3_600_000L}h ago"
+        diff < 172_800_000L -> "yesterday"
+        else -> "${diff / 86_400_000L}d ago"
     }
 }

@@ -47,12 +47,17 @@ fun PaperLimeKeyboardView(
     onAction: (String) -> Boolean = { false },
     // Real clipboard history, owned by the IME service (the overlay used to show
     // three hard-coded demo clips). Previews get an empty, inert list.
-    clipboardClips: List<String> = emptyList(),
+    clipboardClips: List<ClipItem> = emptyList(),
     onClearClipboard: () -> Unit = {},
+    onDeleteClip: (ClipItem) -> Unit = {},
+    onTogglePinClip: (ClipItem) -> Unit = {},
     // Emoji recents, owned by the IME service (session-scoped, like the
     // clipboard). Previews get an empty list and a no-op recorder.
     recentEmojis: List<String> = emptyList(),
     onEmojiUsed: (String) -> Unit = {},
+    // Persists the last skin tone chosen from a long-press; the service writes it
+    // to preferences.
+    onEmojiToneChange: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     // Voice input is owned by the IME service: it holds the SpeechRecognizer and
     // the input connection. The view only draws the mic window and reports taps.
@@ -341,6 +346,8 @@ fun PaperLimeKeyboardView(
     } else {
         300.dp
     }
+    // The clipboard panel uses the same footprint as the emoji picker.
+    val clipboardPanelHeight = emojiPanelHeight
 
     // Gesture typing runs only on the live letter board, never in a preview, an
     // overlay, before the dictionary has loaded, or when the user turned it off.
@@ -532,8 +539,10 @@ fun PaperLimeKeyboardView(
                         palette = palette,
                         recentEmojis = recentEmojis,
                         panelHeight = emojiPanelHeight,
+                        activeTone = prefs.emojiTone,
                         onClose = { overlay = OverlayView.NONE },
                         onBackspace = trackedDelete,
+                        onToneSelected = onEmojiToneChange,
                         onEmojiClick = { emo ->
                             onCommitText(emo)
                             onEmojiUsed(emo)
@@ -545,11 +554,14 @@ fun PaperLimeKeyboardView(
                     ClipboardListPanel(
                         palette = palette,
                         clips = clipboardClips,
+                        panelHeight = clipboardPanelHeight,
+                        pinnedFirst = prefs.clipboardPinnedFirst,
+                        confirmDelete = prefs.clipboardConfirmDelete,
                         onClose = { overlay = OverlayView.NONE },
                         onClearAll = onClearClipboard,
-                        onClipClick = { clip ->
-                            onCommitText(clip)
-                        }
+                        onPaste = { item -> onCommitText(item.text) },
+                        onDelete = onDeleteClip,
+                        onTogglePin = onTogglePinClip
                     )
                 }
 

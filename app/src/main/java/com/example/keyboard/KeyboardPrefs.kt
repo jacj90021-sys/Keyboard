@@ -31,6 +31,10 @@ object PrefKeys {
     val sound = booleanPreferencesKey("sound")
     val haptics = booleanPreferencesKey("haptics")
     val clipboardHistory = booleanPreferencesKey("clipboardHistory")
+    val clipboardSaveSensitive = booleanPreferencesKey("clipboardSaveSensitive")
+    val clipboardConfirmDelete = booleanPreferencesKey("clipboardConfirmDelete")
+    val clipboardMaxItems = intPreferencesKey("clipboardMaxItems")
+    val clipboardPinnedFirst = booleanPreferencesKey("clipboardPinnedFirst")
     val onboardingDone = booleanPreferencesKey("onboardingDone")
     // "Long-press keys & spacebar". Stored now; see the note on KeyboardPrefs:
     // the board does not read these yet.
@@ -49,6 +53,11 @@ object PrefKeys {
     // "Emoji Suggestions" — read by the board, which puts an emoji in front of the
     // word suggestions for the words it knows one for.
     val suggestEmojis = booleanPreferencesKey("suggestEmojis")
+    // Emoji picker state: the recents history (comma-separated) and the last
+    // skin tone applied to tone-capable emoji. Own namespace so they never
+    // collide with the keyboard's other settings.
+    val emojiHistory = stringPreferencesKey("pl.emoji.history")
+    val emojiTone = stringPreferencesKey("pl.emoji.tone")
 }
 
 /**
@@ -103,6 +112,13 @@ data class KeyboardPrefs(
     val sound: Boolean = true,
     val haptics: Boolean = true,
     val clipboardHistory: Boolean = true,
+    // Clipboard options. Sensitive clips are skipped unless the user opts in;
+    // deletion is immediate unless the user asks to confirm; pinned clips sort
+    // first; the cap is the number of remembered clips.
+    val clipboardSaveSensitive: Boolean = false,
+    val clipboardConfirmDelete: Boolean = false,
+    val clipboardMaxItems: Int = 25,
+    val clipboardPinnedFirst: Boolean = true,
     val onboardingDone: Boolean = false,
     // "Long-press keys & spacebar". These are stored and shown now; the board
     // does not act on them yet — the backspace still repeats plain deletes and the
@@ -127,7 +143,9 @@ data class KeyboardPrefs(
     // that have an obvious emoji (see EmojiSuggestions) and offers that emoji in
     // the strip in front of the word suggestions; with this off the strip shows
     // words only.
-    val suggestEmojis: Boolean = true
+    val suggestEmojis: Boolean = true,
+    // The skin tone applied to tone-capable emoji, or null for the default form.
+    val emojiTone: String? = null
 ) {
     /**
      * The strip above the keys hosts two unrelated things: the engine's word
@@ -163,6 +181,10 @@ class KeyboardPrefsRepository(private val context: Context) {
             sound = p[PrefKeys.sound] ?: true,
             haptics = p[PrefKeys.haptics] ?: true,
             clipboardHistory = p[PrefKeys.clipboardHistory] ?: true,
+            clipboardSaveSensitive = p[PrefKeys.clipboardSaveSensitive] ?: false,
+            clipboardConfirmDelete = p[PrefKeys.clipboardConfirmDelete] ?: false,
+            clipboardMaxItems = p[PrefKeys.clipboardMaxItems] ?: 25,
+            clipboardPinnedFirst = p[PrefKeys.clipboardPinnedFirst] ?: true,
             onboardingDone = p[PrefKeys.onboardingDone] ?: false,
             backspaceHoldWords = p[PrefKeys.backspaceHoldWords] ?: false,
             backspaceSwipe = BackspaceSwipe.fromKey(p[PrefKeys.backspaceSwipe]),
@@ -172,7 +194,8 @@ class KeyboardPrefsRepository(private val context: Context) {
             inlineAutofill = p[PrefKeys.inlineAutofill] ?: true,
             hideWhenHardKeyboard = p[PrefKeys.hideWhenHardKeyboard] ?: false,
             autoCap = p[PrefKeys.autoCap] ?: true,
-            suggestEmojis = p[PrefKeys.suggestEmojis] ?: true
+            suggestEmojis = p[PrefKeys.suggestEmojis] ?: true,
+            emojiTone = p[PrefKeys.emojiTone]
         )
     }
 
@@ -220,6 +243,13 @@ class KeyboardPrefsRepository(private val context: Context) {
         context.keyboardDataStore.edit { it[PrefKeys.suggestEmojis] = value }
     }
 
+    suspend fun setEmojiTone(tone: String?) {
+        context.keyboardDataStore.edit { prefs ->
+            if (tone == null) prefs.remove(PrefKeys.emojiTone)
+            else prefs[PrefKeys.emojiTone] = tone
+        }
+    }
+
     suspend fun setBool(key: String, value: Boolean) {
         context.keyboardDataStore.edit { prefs ->
             when (key) {
@@ -236,6 +266,9 @@ class KeyboardPrefsRepository(private val context: Context) {
                 "sound" -> prefs[PrefKeys.sound] = value
                 "haptics" -> prefs[PrefKeys.haptics] = value
                 "clipboardHistory" -> prefs[PrefKeys.clipboardHistory] = value
+                "clipboardSaveSensitive" -> prefs[PrefKeys.clipboardSaveSensitive] = value
+                "clipboardConfirmDelete" -> prefs[PrefKeys.clipboardConfirmDelete] = value
+                "clipboardPinnedFirst" -> prefs[PrefKeys.clipboardPinnedFirst] = value
                 "onboardingDone" -> prefs[PrefKeys.onboardingDone] = value
             }
         }
@@ -245,6 +278,7 @@ class KeyboardPrefsRepository(private val context: Context) {
         context.keyboardDataStore.edit { prefs ->
             when (key) {
                 "swipeSensitivity" -> prefs[PrefKeys.swipeSensitivity] = value
+                "clipboardMaxItems" -> prefs[PrefKeys.clipboardMaxItems] = value
             }
         }
     }
