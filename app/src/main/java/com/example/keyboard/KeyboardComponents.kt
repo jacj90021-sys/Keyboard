@@ -57,8 +57,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -94,34 +95,26 @@ private fun keyGestureModifier(
     onLongClick: (() -> Unit)?,
     onRepeat: (() -> Unit)?
 ): Modifier {
-    // Hold the latest callback without restarting the collector: while a key
+    // Keep the latest callback without restarting the collector: while a key
     // repeats, every delete recomposes the keyboard.
-    val tick by rememberUpdatedState(onRepeat ?: onClick)
+    val repeatAction by rememberUpdatedState(onRepeat)
 
-    // Same shape as FUTO's repeatablyClickableAction: clickable emits
-    // Press/Release into the interaction source, and this collector turns a held
-    // press into an initial action plus a repeating one. The pointer scope itself
-    // forbids general suspension, so all timing lives here.
+    // A held press fires the action once, waits, then repeats until the press
+    // ends. collectLatest cancels the pending repeat loop as soon as a release
+    // or cancel event arrives.
     LaunchedEffect(interactionSource, onRepeat) {
-        if (onRepeat == null) return@LaunchedEffect
-        var repeatJob: Job? = null
-        interactionSource.interactions.collect { interaction ->
-            when (interaction) {
-                is PressInteraction.Press -> {
-                    tick()
-                    repeatJob?.cancel()
-                    repeatJob = launch {
+        val action = repeatAction ?: return@LaunchedEffect
+        interactionSource.interactions.collectLatest { interaction ->
+            if (interaction is PressInteraction.Press) {
+                action()
+                coroutineScope {
+                    launch {
                         delay(HOLD_INITIAL_DELAY_MS)
                         while (isActive) {
-                            tick()
+                            action()
                             delay(HOLD_REPEAT_INTERVAL_MS)
                         }
                     }
-                }
-                is PressInteraction.Release,
-                is PressInteraction.Cancel -> {
-                    repeatJob?.cancel()
-                    repeatJob = null
                 }
             }
         }
