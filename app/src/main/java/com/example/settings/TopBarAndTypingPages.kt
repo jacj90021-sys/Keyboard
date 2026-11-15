@@ -149,12 +149,12 @@ fun TypingPage(
     onOpenResize: () -> Unit,
     onOpenLongPress: () -> Unit
 ) {
-    // The page is a short list now, the way FUTO's Keyboard settings leads with
-    // "Resize Keyboard" and "Long-Press Keys & Spacebar", then hands the plain
-    // switches the same list. "Emoji Suggestions" and "Auto-capitalization" come
-    // from FUTO's Typing screen; we keep one page for both. The switches that used
-    // to live here are not gone either: Number row, Special characters, Key preview
-    // popup and Fn are in Appearance, and Autocorrect is in Prediction.
+    // The page is a short list now: it leads with "Resize Keyboard" and
+    // "Long-Press Keys & Spacebar", then hands the plain switches the same list.
+    // "Emoji Suggestions" and "Auto-capitalization" come from the typing screen;
+    // we keep one page for both. The switches that used to live here are not gone
+    // either: Number row, Special characters, Key preview popup and Fn are in
+    // Appearance, and Autocorrect is in Prediction.
     PageScaffold(title = "Keyboard & typing", onBack = onBack) {
         val scope = rememberCoroutineScope()
         SwitchCard {
@@ -166,7 +166,7 @@ fun TypingPage(
                 onClick = onOpenResize
             )
             Divider()
-            // FUTO's second entry on this screen: its own screen, three groups
+            // The second entry on this screen: its own screen, three groups
             // (backspace, spacebar, long-press duration).
             SettingRow(
                 icon = Icons.Default.SpaceBar,
@@ -174,11 +174,10 @@ fun TypingPage(
                 subtitle = "Backspace and spacebar gestures, and how long a long press is",
                 onClick = onOpenLongPress
             )
-            // FUTO puts its plain switches below the two entries that open a
-            // screen, in the same list. "Emoji Suggestions" and
-            // "Auto-capitalization" come from FUTO's *Typing* screen, the one we
-            // fold into this page, so they sit with the switches that come from its
-            // Keyboard screen.
+            // Plain switches sit below the two entries that open a screen, in the
+            // same list. "Emoji Suggestions" and "Auto-capitalization" come from
+            // the *Typing* screen, the one we fold into this page, so they sit with
+            // the switches that come from the Keyboard screen.
             Divider()
             SwitchRow(
                 title = "Emoji Suggestions",
@@ -197,9 +196,9 @@ fun TypingPage(
                     scope.launch { repository.setAutoCap(!prefs.autoCap) }
                 }
             )
-            // FUTO's own order in that list is inline autofill, "Quick period key",
-            // then hide-when-USB. We skip Quick period key by request, so these two
-            // sit next to each other where FUTO has three.
+            // The order in that list is inline autofill, "Quick period key", then
+            // hide-when-USB. We skip Quick period key by request, so these two sit
+            // next to each other where there would otherwise be three.
             Divider()
             SwitchRow(
                 title = "Inline autofill",

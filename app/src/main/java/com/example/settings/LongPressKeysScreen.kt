@@ -15,18 +15,18 @@ import com.example.keyboard.SpacebarAction
 import com.example.ui.theme.DmSans
 import com.example.ui.theme.Tokens
 
-// FUTO's range for the long-press timeout is 100–700 ms with a 300 ms default
-// (its slider's soft range); 25 ms a step keeps the same granularity.
+// The range for the long-press timeout is 100–700 ms with a 300 ms default;
+// 25 ms a step keeps the granularity fine.
 private const val MIN_DURATION_MS = 100
 private const val MAX_DURATION_MS = 700
 private const val DURATION_STEP_MS = 25
 private const val DEFAULT_DURATION_MS = 300
 
 /**
- * "Long-press keys & spacebar" — FUTO's second entry on the keyboard screen. Three
+ * "Long-press keys & spacebar" — the second entry on the keyboard screen. Three
  * groups only, the three that were asked for: Backspace, Spacebar, Long press
- * duration. FUTO's other two items (the long-press key-order editor and the key
- * hints switch) are deliberately not here.
+ * duration. The long-press key-order editor and the key hints switch are
+ * deliberately not here.
  *
  * Honest state of play: these write real preferences, but the board does not read
  * them yet — the backspace still repeats single deletes and the spacebar has no
@@ -70,7 +70,7 @@ fun LongPressKeysPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository,
         Spacer(Modifier.height(14.dp))
         PickerLabel("Hold")
         SegControl(
-            // A hold always does something in FUTO, so "Off" is not offered here.
+            // A hold always does something, so "Off" is not offered here.
             options = listOf(SpacebarAction.CURSOR.label, SpacebarAction.LANGUAGE.label),
             selectedIndex = if (prefs.spacebarHold == SpacebarAction.LANGUAGE) 1 else 0,
             modifier = Modifier.fillMaxWidth(),

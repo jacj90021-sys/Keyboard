@@ -113,7 +113,7 @@ class KeyboardInteractionTest {
     @Test
     fun `every toolbar overlay opens and closes`() {
         start()
-        // Opening an overlay hides the toolbar (FUTO swaps the whole bar for the
+        // Opening an overlay hides the toolbar (the whole bar is swapped for the
         // action's own header), so each overlay is closed before the next tool is
         // reached for.
         clickTag("tool:emoji")

@@ -28,8 +28,8 @@ class KeyboardPrefsTest {
     }
 
     @Test
-    fun autoCapitalizationDefaultsOnLikeFuto() {
-        // FUTO ships with auto-capitalization on; the board's Shift key is raised
+    fun autoCapitalizationDefaultsOn() {
+        // Auto-capitalization ships on; the board's Shift key is raised
         // for the user until they say otherwise.
         assertTrue(KeyboardPrefs().autoCap)
     }

@@ -367,9 +367,8 @@ fun FloatingToolbar(
     onAction: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // FUTO-shaped bar: a fixed 40.dp height and equal-width slots, so all seven
-    // tools fit with no sliding. On a 360.dp phone each slot is ~47.dp, the same
-    // order as FUTO's ~48.dp cells.
+    // A fixed 40.dp height and equal-width slots, so all seven tools fit with no
+    // sliding. On a 360.dp phone each slot is ~47.dp.
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -447,9 +446,9 @@ fun ToolbarIconButton(
         modifier = modifier
             .fillMaxHeight()
             .drawBehind {
-                // FUTO draws a round pad, not a stretched rounded rectangle: a
-                // 32.dp circle centred in the 40.dp slot, so seven fit side by
-                // side without sliding.
+                // A round pad, not a stretched rounded rectangle: a 32.dp circle
+                // centred in the 40.dp slot, so seven fit side by side without
+                // sliding.
                 drawCircle(
                     color = if (isSpecial) palette.paperDeep else palette.keyBg,
                     radius = 16.dp.toPx()
@@ -476,9 +475,9 @@ fun ToolbarIconButton(
 /**
  * The voice-input window.
  *
- * FUTO opens a *window* for the mic instead of starting a recognizer silently
- * behind the keyboard, so the user can see the mic is live, watch words appear
- * as they speak, and stop. This is that window for the platform recognizer: a
+ * The mic opens a *window* instead of starting a recognizer silently behind the
+ * keyboard, so the user can see the mic is live, watch words appear as they
+ * speak, and stop. This is that window for the platform recognizer: a
  * pulsing mic while [state] is active, the live caption underneath, and a
  * one-tap way out when the engine is missing or the mic was refused.
  */
@@ -832,7 +831,7 @@ fun EmojiPickerGrid(
     val gridState = rememberLazyGridState()
 
     // Jump back to the top whenever the category changes, so a search-free switch
-    // always lands on the first row (FUTO snaps the strip the same way).
+    // always lands on the first row.
     LaunchedEffect(selectedTab.title) { gridState.scrollToItem(0) }
 
     Column(
@@ -887,7 +886,7 @@ fun EmojiPickerGrid(
             }
         }
 
-        // Bottom navigation, FUTO-order: ABC on the left, the scrollable category
+        // Bottom navigation: ABC on the left, the scrollable category
         // strip in the middle, backspace on the right.
         Row(
             modifier = Modifier
@@ -959,9 +958,9 @@ fun EmojiPickerGrid(
 private data class EmojiTab(val title: String, val glyph: String, val items: List<String>)
 
 /**
- * One emoji cell. FUTO draws a bare glyph on the board (its cells have a ripple,
- * not a filled key), which is what makes the grid read as a picker and not a
- * calculator. A pressed wash stands in for the ripple.
+ * One emoji cell. A bare glyph on the board (cells have a ripple, not a filled
+ * key), which is what makes the grid read as a picker and not a calculator. A
+ * pressed wash stands in for the ripple.
  */
 @Composable
 private fun EmojiChoiceCell(

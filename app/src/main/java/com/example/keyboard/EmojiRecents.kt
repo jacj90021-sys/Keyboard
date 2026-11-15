@@ -3,7 +3,7 @@ package com.example.keyboard
 /**
  * A bounded, newest-first list of recently used emoji.
  *
- * FUTO's picker opens on a "Recent" tab, and Android gives us nothing of the
+ * The picker opens on a "Recent" tab, and Android gives us nothing of the
  * sort, so the IME service accumulates the list as emoji are typed. Keeping the
  * rules in a plain class (rather than in the service) makes the de-duplication
  * and capacity behaviour unit testable off-device — the same shape as

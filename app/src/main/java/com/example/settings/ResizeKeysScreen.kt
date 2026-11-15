@@ -22,11 +22,10 @@ private const val MAX_HEIGHT_DP = 60
 private const val HEIGHT_STEP_DP = 2
 
 /**
- * "Resize keyboard": FUTO's flow — the entry opens a screen of its own that puts
- * the keyboard on screen and lets you size it against a live preview. It is our
- * own screen: the live board IS the real keyboard view (not a faked mock), the
- * size control is a plain −/+ stepper rather than FUTO's drag handles, and there
- * is no tip box and no reset entry.
+ * "Resize keyboard": the entry opens a screen of its own that puts the keyboard
+ * on screen and lets you size it against a live preview. The live board IS the
+ * real keyboard view (not a faked mock), the size control is a plain −/+ stepper
+ * rather than drag handles, and there is no tip box and no reset entry.
  */
 @Composable
 fun ResizeKeysPage(prefs: KeyboardPrefs, repository: KeyboardPrefsRepository, onBack: () -> Unit) {

@@ -17,8 +17,7 @@ object EmojiSuggestions {
 
     /**
      * Words shorter than this are left alone: two-letter words are almost always
-     * meant literally, and hijacking them would put a flag in front of "it". FUTO
-     * guards its emoji shortcuts with the same rule.
+     * meant literally, and hijacking them would put a flag in front of "it".
      */
     const val MIN_LENGTH = 3
 

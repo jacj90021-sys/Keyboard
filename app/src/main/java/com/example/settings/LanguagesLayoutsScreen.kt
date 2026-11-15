@@ -45,7 +45,7 @@ import kotlinx.coroutines.delay
  *
  * A faithful Compose port of the "Languages & Layouts" design: the same paper
  * shell and card/list language, and the same three-step flow — the overview, the
- * FUTO-style "Add Keyboard Layout" tile picker (with its floating keyboard
+ * tile-based "Add Keyboard Layout" picker (with its floating keyboard
  * button), and the per-resource "Explore" pages — plus the two bottom sheets
  * (language naming, remove-language confirm) and the toast.
  */
@@ -618,7 +618,7 @@ private fun AddLayoutPage(
             }
         )
 
-        Label("Select Layout (FUTO Box Style)")
+        Label("Select Layout")
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             layoutOptions.chunked(2).forEach { pair ->

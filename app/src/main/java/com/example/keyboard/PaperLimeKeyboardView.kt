@@ -123,9 +123,8 @@ fun PaperLimeKeyboardView(
     var engineReady by remember { mutableStateOf(NativeEngineBridge.isLoaded()) }
     var boardSize by remember { mutableStateOf(IntSize.Zero) }
     // The live keyboard's height, remembered while the plain board is showing so
-    // the emoji panel can take the same footprint (FUTO's action window does the
-    // same). Only captured with no overlay open, so the panel cannot feed its own
-    // size back into it.
+    // the emoji panel can take the same footprint. Only captured with no overlay
+    // open, so the panel cannot feed its own size back into it.
     var keyboardAreaHeightPx by remember { mutableStateOf(0) }
     // Suggestions run on a background dispatcher: the query used to resolve
     // during composition, blocking the frame (next-word ranking alone cost ~9 ms
@@ -329,7 +328,7 @@ fun PaperLimeKeyboardView(
     }
 
     val showChevron = prefs.showChevron
-    // FUTO swaps the entire top bar for the action's own header when an action
+    // The entire top bar is swapped for the action's own header when an action
     // window opens, so the floating toolbar must not float over the emoji panel
     // (or over any other overlay) — the panel carries its own back row instead.
     val overlayOpen = overlay != OverlayView.NONE
@@ -383,7 +382,7 @@ fun PaperLimeKeyboardView(
             .padding(horizontal = 4.dp, vertical = 4.dp)
     ) {
         // Floating Toolbar Overlay - placed at the top above suggestions.
-        // Swapped in with a plain `if`, not AnimatedVisibility: FUTO's bar appears
+        // Swapped in with a plain `if`, not AnimatedVisibility: the bar appears
         // in the same frame the chevron is tapped, and our old slide+fade (~300ms
         // spring) also re-measured the whole keyboard on every frame while it ran.
         if (toolbarVisible) {
@@ -402,8 +401,7 @@ fun PaperLimeKeyboardView(
                 },
                 onAction = { actionId ->
                     if (actionId == "voice") {
-                        // The mic opens our own voice window (FUTO keeps the mic on
-                        // the bar and opens a window for it) instead of silently
+                        // The mic opens our own voice window instead of silently
                         // starting a recognizer behind the keyboard.
                         if (overlay == OverlayView.VOICE) {
                             onStopVoice()

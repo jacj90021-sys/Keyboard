@@ -127,7 +127,7 @@ class PaperLimeInputMethodService : InputMethodService(),
         }.onFailure { Log.e(TAG, "clipboard capture failed", it) }
     }
 
-    // Emoji recents: session-scoped like the clipboard history above. FUTO's
+    // Emoji recents: session-scoped like the clipboard history above. The
     // picker opens on a Recent tab, and this is what feeds ours.
     private val emojiRecents = EmojiRecents()
     private val _recentEmojis = MutableStateFlow<List<String>>(emptyList())

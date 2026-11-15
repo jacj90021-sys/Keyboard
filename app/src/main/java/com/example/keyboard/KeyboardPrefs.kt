@@ -39,7 +39,7 @@ object PrefKeys {
     val spacebarSwipe = stringPreferencesKey("spacebarSwipe")
     val spacebarHold = stringPreferencesKey("spacebarHold")
     val longPressMs = intPreferencesKey("longPressMs")
-    // FUTO's two switches on the same screen. hideWhenHardKeyboard is honoured by
+    // Two switches on the same screen. hideWhenHardKeyboard is honoured by
     // the IME service; inlineAutofill is stored but the chips are not wired yet.
     val inlineAutofill = booleanPreferencesKey("inlineAutofill")
     val hideWhenHardKeyboard = booleanPreferencesKey("hideWhenHardKeyboard")
@@ -52,7 +52,7 @@ object PrefKeys {
 }
 
 /**
- * What sliding a finger off the delete key does — FUTO's "Swipe to delete".
+ * What sliding a finger off the delete key does — "Swipe to delete".
  * Stored as a plain key string so the DataStore stays readable by eye.
  */
 enum class BackspaceSwipe(val prefKey: String, val label: String) {
@@ -61,14 +61,14 @@ enum class BackspaceSwipe(val prefKey: String, val label: String) {
     WORDS("words", "Words");
 
     companion object {
-        /** FUTO's own default for this setting. */
+        /** The default for this setting. */
         fun fromKey(key: String?): BackspaceSwipe =
             entries.firstOrNull { it.prefKey == key } ?: CHARACTERS
     }
 }
 
 /**
- * A job the spacebar can do — FUTO's Spacebar "Swipe" / "Hold" pickers. [OFF] is
+ * A job the spacebar can do — the Spacebar "Swipe" / "Hold" pickers. [OFF] is
  * only offered for the slide; a hold always does something.
  */
 enum class SpacebarAction(val prefKey: String, val label: String) {
@@ -113,17 +113,17 @@ data class KeyboardPrefs(
     val spacebarSwipe: SpacebarAction = SpacebarAction.CURSOR,
     val spacebarHold: SpacebarAction = SpacebarAction.LANGUAGE,
     val longPressMs: Int = 300,
-    // FUTO's defaults: inline autofill on, hide-when-USB off. inlineAutofill is a
+    // Defaults: inline autofill on, hide-when-USB off. inlineAutofill is a
     // saved choice only — we never call requestInlineSuggestions yet, so no chip
     // can appear; hideWhenHardKeyboard is read by the IME service's
     // onEvaluateInputViewShown.
     val inlineAutofill: Boolean = true,
     val hideWhenHardKeyboard: Boolean = false,
-    // "Capitalize the first word of each sentence", FUTO's default. The board's
+    // "Capitalize the first word of each sentence", the default. The board's
     // Shift key is turned on by the IME service when Android says the caret sits
     // at the start of a sentence; with this off nothing ever raises Shift for you.
     val autoCap: Boolean = true,
-    // "Emoji Suggestions", FUTO's default. The board knows a small list of words
+    // "Emoji Suggestions", the default. The board knows a small list of words
     // that have an obvious emoji (see EmojiSuggestions) and offers that emoji in
     // the strip in front of the word suggestions; with this off the strip shows
     // words only.

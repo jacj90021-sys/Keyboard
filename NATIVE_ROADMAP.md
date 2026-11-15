@@ -232,28 +232,27 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      hardcoded `Yes / Okay / Thanks / Awesome` list whenever the engine had
      nothing to say, so an empty text box showed filler chips. The decision is now
      `visibleSuggestions()`: real engine output wins, the Fn keys show in Fn mode,
-     and otherwise the strip is empty — the way FUTO's neutral strip is an empty
-     `Spacer`. Covered by 5 new `SuggestionsBarTest` cases.
+     and otherwise the strip is empty — a neutral strip with no chips. Covered by
+     5 new `SuggestionsBarTest` cases.
 59. `[x]` **Hold to erase.** The `⌫` key only had `onClick`, so erasing a word
      meant tapping once per character. `SoftKey` grew an `onRepeat` action wired to
      the backspace in every layout: one delete fires on press, then a held finger
      keeps deleting (400 ms initial delay, 55 ms interval). The timing runs in a
-     `LaunchedEffect` that collects the key's `Press`/`Release` interactions, the
-     same shape as FUTO's `repeatablyClickableAction`, because the pointer-input
-     scope forbids general suspension.
-60. `[x]` **A FUTO-shaped, instant toolbar.** The toolbar grew from 5 to 7 tools
+     `LaunchedEffect` that collects the key's `Press`/`Release` interactions,
+     because the pointer-input scope forbids general suspension.
+60. `[x]` **An instant toolbar.** The toolbar grew from 5 to 7 tools
      (emoji, clipboard, translate, GIF, text editor, mic, overflow) and adopted
-     FUTO's geometry: a 40 dp bar with each icon centred in a 32 dp circular pad
-     instead of a stretched rounded rectangle, so all seven fit with no sliding
+     a compact geometry: a 40 dp bar with each icon centred in a 32 dp circular
+     pad instead of a stretched rounded rectangle, so all seven fit with no sliding
      (≈49 dp per slot at 360 dp wide). The mic moved out of the All Actions
      overlay onto the bar, wired to the same `voice` action the grid uses. The bar
      also lost its `AnimatedVisibility` slide+fade: a plain `if` swaps it in the
-     same frame, like FUTO, which also stops the keyboard being re-measured on
-     every animation frame.
+     same frame, which also stops the keyboard being re-measured on every
+     animation frame.
 61. `[x]` **A voice window that shows its work.** The mic used to start a
      `SpeechRecognizer` silently behind the keyboard: no window, no caption, no
      error — the tap read as a dead button. Voice input is now a first-class
-     overlay, the way FUTO opens a window for the mic. A new `VoiceInputState`
+     overlay, with a window for the mic. A new `VoiceInputState`
      (published by the IME service, drawn by Compose) replaces the private
      `isListening` boolean, so the window can show a pulsing mic while it listens,
      the live partial caption as words arrive, and a plain-English sentence for
@@ -284,10 +283,10 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      remembered while the plain keyboard shows, plus the row the toolbar
      vacated) and carries its own header: a back chevron, the active category's
      name, a bare-glyph grid with a pressed wash instead of filled keys, and a
-     bottom strip of ABC · categories · backspace — FUTO's arrangement. The view
-     hides the floating toolbar and the suggestion strip whenever *any* overlay
-     is open, so the bar can no longer float over the panel (FUTO swaps its whole
-     action bar for the action's header the same way). A session-scoped "Recent"
+     bottom strip of ABC · categories · backspace. The view hides the floating
+     toolbar and the suggestion strip whenever *any* overlay is open, so the bar
+     can no longer float over the panel (the whole action bar is swapped for the
+     action's header the same way). A session-scoped "Recent"
      tab, owned by the IME service and bounded to 24 like the clipboard history,
      fronts the catalogue.
 
@@ -296,7 +295,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      the whole design: the overview (display-language-names sheet, subtype-label
      switch, the language card with its Voice/Dictionary/Transformer model rows,
      the active-layout line, the multilingual switch, and the lime Add Keyboard
-     Layout / red Remove Language buttons), a FUTO-style two-column layout tile
+     Layout / red Remove Language buttons), a two-column layout tile
      grid with a check-to-save header and a floating keyboard button, and the
      per-resource Explore pages (import, voice, dictionaries, transformer). It is
      a faithful Compose port of the supplied design — the crisp 0-offset lime
@@ -326,8 +325,8 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
 66. `[x]` **"Keyboard & typing" is one entry, and it opens a real resize screen.**
      The page had turned into a grab-bag of switches (Number row, Key preview
      popup, Autocorrect, Special characters, Fn) that repeated settings already
-     living in Appearance and in Prediction. FUTO's Keyboard settings leads with
-     "Resize Keyboard" and opens a screen of its own from it, so this page now
+     living in Appearance and in Prediction. The keyboard settings lead with
+     "Resize Keyboard" and open a screen of its own from it, so this page now
      does the same: a single "Resize keyboard" row, carrying the current height,
      that opens `ResizeKeysPage`. That screen puts the *real* keyboard view on
      screen — not a faked mock, and not a second copy to keep in step — and pairs
@@ -336,24 +335,24 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      switch over the board's own modes, Fn only appearing when the Fn key is on.
      The switch is two-way: the preview now accepts a *controlled* mode, so
      tapping "?123", "123", "ABC" or Fn inside the preview moves the switch too,
-     instead of the board and the switch overwriting each other. Two things from
-     FUTO's screen were deliberately not copied: the tip box with the resize
-     instructions inside it, and the reset entry behind a close (×) icon. The
+     instead of the board and the switch overwriting each other. Two things were
+     deliberately left out: the tip box with the resize instructions inside it,
+     and the reset entry behind a close (×) icon. The
      removed switches are still reachable — Number row, Special characters, Key
      preview popup and Fn live in Appearance, Autocorrect in Prediction. The
      settings-list subtitle moved with the page ("Layout and key behavior" →
      "Keyboard size and layout modes"). Compile verification pending.
 
-67. `[x]` **"Long-press keys & spacebar" opens FUTO's third screen — three groups,
-     no more.** Under the resize row sits FUTO's other Keyboard-settings entry,
+67. `[x]` **"Long-press keys & spacebar" opens the third screen — three groups,
+     no more.** Under the resize row sits the other keyboard-settings entry,
      and it now leads somewhere: `LongPressKeysPage`, holding exactly the three
-     groups asked for and none of FUTO's extras (no long-press key-order editor,
+     groups asked for and no extras (no long-press key-order editor,
      no key-hints switch). **Backspace** is the "Hold to delete words" switch over
      "Swipe to delete" (Off / Characters / Words); **Spacebar** is "Swipe"
      (Off / Move cursor / Switch language) over "Hold" (Move cursor / Switch
-     language — a hold always does something, so Off is not offered, as in FUTO);
-     **Long press duration** is a −/+ stepper over FUTO's 100–700 ms range with
-     its 25 ms steps and 300 ms default. Defaults follow FUTO: delete-hold off,
+     language — a hold always does something, so Off is not offered);
+     **Long press duration** is a −/+ stepper over a 100–700 ms range with
+     25 ms steps and a 300 ms default. Defaults: delete-hold off,
      swipe-to-delete Characters, spacebar swipe Move cursor, spacebar hold Switch
      language. Switches and pickers reuse `SwitchRow`, `SegControl` and the new
      shared `StepperRow` (lifted out of the resize screen so both screens use the
@@ -373,12 +372,11 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      `PaperLimeKeyboardView`/the IME service. Compile verification pending.
 
 68. `[x]` **Two more switches under the "Keyboard & typing" entries — one real, one
-     saved.** FUTO's keyboard screen puts its plain toggles below the entries that
+     saved.** The keyboard screen puts its plain toggles below the entries that
      open a screen, in the same list, and ours now does too: under "Resize keyboard"
-     and "Long-press keys & spacebar" sit **Inline autofill** (on by default, FUTO's
-     own default) and **Hide when USB keyboard is detected** (off by default, also
-     FUTO's default). FUTO's "Quick period key" sits between them and is deliberately
-     skipped, as asked.
+     and "Long-press keys & spacebar" sit **Inline autofill** (on by default) and
+     **Hide when USB keyboard is detected** (off by default). A "Quick period key"
+     switch sits between them and is deliberately skipped, as asked.
 
      **Hide when USB is wired and real.** `PaperLimeKeyboardService.onEvaluateInputViewShown()`
      used to be a hard `true`, so the soft keyboard always appeared even with a USB
@@ -398,10 +396,10 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      (no hard keys, folded-away keyboard, QWERTY and 12-key boards).
 
      **Inline autofill is a real switch over a preference that nothing reads yet.**
-     It defaults on, exactly like FUTO, and it saves and reloads — but no chip can
+     It defaults on, and it saves and reloads — but no chip can
      appear, because we never call `InputConnection.requestInlineSuggestions`, and
-     the suggestion strip has no path for the platform `View`s that come back. FUTO's
-     version needs `androidx.autofill:autofill` (a new dependency), an inline-chip
+     the suggestion strip has no path for the platform `View`s that come back. A
+     working version needs `androidx.autofill:autofill` (a new dependency), an inline-chip
      drawable, a request spec built from our palette, and `AndroidView` interop
      inside the Compose strip. That is a separate, larger change — and one that only
      does anything on Android 11+ *and* only if the phone actually has a password
@@ -409,11 +407,11 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      step rather than guessed blind here. Until then this switch is honest about
      being a stored choice, not a working feature. Compile verification pending.
 
-69. `[x]` **Auto-capitalization — a real setting, not a stored one.** FUTO keeps
-     "Auto-capitalization" ("Capitalize the first word of each sentence") on its
-     *Typing* screen; we keep one page for both, so the switch sits with the other
+69. `[x]` **Auto-capitalization — a real setting, not a stored one.** The
+     *Typing* screen keeps "Auto-capitalization" ("Capitalize the first word of
+     each sentence"); we keep one page for both, so the switch sits with the other
      switches on "Keyboard & typing", between the two screen entries and Inline
-     autofill. It defaults **on**, like FUTO.
+     autofill. It defaults **on**.
 
      The board has never capitalized anything by itself: `shiftState` started OFF
      and only the user's shift key ever changed it — `SuggestionCase` could restore
@@ -443,13 +441,13 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      items 27 and 28.
 
 70. `[x]` **Emoji Suggestions — a real suggestion, over our own small word list.**
-     FUTO's row (title "Emoji Suggestions", subtitle "Suggest emojis while you're
-     typing", default on) sits above Auto-capitalization on its *Typing* screen, so
-     the switch sits above ours too. It defaults **on**, like FUTO.
+     The row (title "Emoji Suggestions", subtitle "Suggest emojis while you're
+     typing", default on) sits above Auto-capitalization on the *Typing* screen, so
+     the switch sits above ours too. It defaults **on**.
 
-     FUTO builds this out of a dictionary of emoji shortcuts: type a word that is a
+     This is built out of a dictionary of emoji shortcuts: type a word that is a
      known shortcut and the emoji is offered in the strip. The mechanism is
-     reproduced — `EmojiSuggestions.forTypedWord` matches the word being typed and
+     implemented — `EmojiSuggestions.forTypedWord` matches the word being typed and
      `withSuggestion` puts the emoji in front of the engine's candidates, still
      capped at `SuggestionPlanner.MAX_CANDIDATES` (the emoji takes the top slot, the
      lowest-ranked word gives up its place) — but **the list is ours and small**:
@@ -457,7 +455,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      sleep, fireworks, ...), not a copy of any emoji project's data and not every
      emoji name in Unicode. That is the honest limit of the setting: it is a
      shortcut list, not a picture search, and a word that is not on the list simply
-     gets no emoji. Two-letter words are deliberately excluded, FUTO's own guard:
+     gets no emoji. Two-letter words are deliberately excluded:
      "it" must stay the word "it" and not become a flag.
 
      Tapping the emoji is *not* tapping a word: the handler commits the emoji (with
@@ -469,7 +467,7 @@ Status legend: `[x]` done + verified, `[~]` in progress, `[ ]` queued.
      pins the known words, the case folding, the two-letter and partial-word
      refusals, and the front-of-list placement. Compile verification pending, and
      the switch only shows anything when the strip itself is on (the same coupling
-     FUTO's action bar has).
+     the action bar has).
 
 ## Constraints
 
