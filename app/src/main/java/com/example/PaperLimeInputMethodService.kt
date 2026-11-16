@@ -113,8 +113,8 @@ class PaperLimeInputMethodService : InputMethodService(),
     // Android only hands out the *current* primary clip, so the keyboard keeps
     // its own bounded history, captured while the IME view is visible (see
     // ClipboardHistory for the rules).
-    private val clipboardHistory = ClipboardHistory(this, scope = { lifecycleScope })
-    private val _clipboardItems = MutableStateFlow(clipboardHistory.items())
+    private val clipboardHistory by lazy { ClipboardHistory(this, scope = { lifecycleScope }) }
+    private val _clipboardItems = MutableStateFlow<List<ClipItem>>(emptyList())
     val clipboardItems: StateFlow<List<ClipItem>> = _clipboardItems.asStateFlow()
     private var clipboardListenerRegistered = false
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
@@ -142,7 +142,7 @@ class PaperLimeInputMethodService : InputMethodService(),
 
     // Emoji recents: session-scoped like the clipboard history above. The
     // picker opens on a Recent tab, and this is what feeds ours.
-    private val emojiRecents = EmojiRecents(this, scope = { lifecycleScope })
+    private val emojiRecents by lazy { EmojiRecents(this, scope = { lifecycleScope }) }
     private val _recentEmojis = MutableStateFlow<List<String>>(emptyList())
     val recentEmojis: StateFlow<List<String>> = _recentEmojis.asStateFlow()
     private fun recordEmoji(emoji: String) {
@@ -190,6 +190,12 @@ class PaperLimeInputMethodService : InputMethodService(),
 
     override fun onCreate() {
         super.onCreate()
+
+        // Both history stores touch the file system, so they must not be built
+        // during construction: the service base context is not attached yet.
+        // Trigger them here and seed the flows the UI collects.
+        _clipboardItems.value = clipboardHistory.items()
+        _recentEmojs.value = emojiRecents.entries()
 
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->

@@ -125,7 +125,6 @@ class ClipboardHistory(
 
     private fun save() {
         val target = context ?: return
-        val file = File(target.filesDir, FILE_NAME)
         val array = JSONArray()
         items.forEach { item ->
             array.put(
@@ -136,15 +135,18 @@ class ClipboardHistory(
             )
         }
         scope().launch {
-            runCatching { file.writeText(array.toString()) }
+            runCatching {
+                val file = File(target.filesDir, FILE_NAME)
+                file.writeText(array.toString())
+            }
         }
     }
 
     private fun load() {
         val target = context ?: return
-        val file = File(target.filesDir, FILE_NAME)
-        if (!file.exists()) return
         runCatching {
+            val file = File(target.filesDir, FILE_NAME)
+            if (!file.exists()) return@runCatching
             val array = JSONArray(file.readText())
             val restored = ArrayDeque<ClipItem>()
             for (i in 0 until array.length()) {

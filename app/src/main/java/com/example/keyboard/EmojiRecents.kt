@@ -29,8 +29,12 @@ class EmojiRecents(
 
     init {
         require(capacity > 0) { "capacity must be positive" }
-        val stored = context?.let {
-            runBlocking { it.keyboardDataStore.data.first()[PrefKeys.emojiHistory].orEmpty() }
+        val stored = context?.let { target ->
+            runCatching {
+                runBlocking {
+                    target.keyboardDataStore.data.first()[PrefKeys.emojiHistory].orEmpty()
+                }
+            }.getOrDefault("")
         }.orEmpty()
         stored.split(SEPARATOR)
             .map { it.trim() }
