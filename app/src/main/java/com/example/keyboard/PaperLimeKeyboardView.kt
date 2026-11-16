@@ -72,7 +72,11 @@ fun PaperLimeKeyboardView(
     // preview moves the switcher too. Left null — every other caller — the board
     // owns its mode exactly as before.
     previewMode: KeyboardMode? = null,
-    onPreviewModeChange: (KeyboardMode) -> Unit = {}
+    onPreviewModeChange: (KeyboardMode) -> Unit = {},
+    // Keyboard sizing from the Resize Keyboard screen. Null everywhere except
+    // the IME host, which passes the persisted settings so the live board
+    // matches the chosen mode and size.
+    resize: ResizeSettings? = null
 ) {
     var internalMode by rememberSaveable { mutableStateOf(KeyboardMode.QWERTY) }
     val mode = previewMode ?: internalMode
@@ -371,7 +375,7 @@ fun PaperLimeKeyboardView(
     // be remembered, which left the Fn key (and others) stale until another toggle
     // changed the remember keys.
     val config = KeyRenderConfig(
-        keyHeight = prefs.keyHeight.dp,
+        keyHeight = (resize?.effectiveKeyHeight(prefs.keyHeight) ?: prefs.keyHeight).dp,
         // KEEP EXISTING BEHAVIOUR: the letters row always shows its number hints.
         // TODO(special): the "Special characters" switch is persisted but has no extra
         // behaviour yet — the existing keyboard already shows the symbols on keys.
@@ -470,9 +474,20 @@ fun PaperLimeKeyboardView(
         }
     }
 
+    // Size the board for the chosen resize mode. Standard keeps the original
+    // full-width behaviour; the other modes narrow and/or offset the board.
+    val sizeModifier = when (resize?.mode) {
+        ResizeMode.ONE_HANDED -> Modifier.width(resize.oneHandedWidth.dp)
+        ResizeMode.SPLIT -> Modifier.fillMaxWidth(resize.splitFraction.coerceIn(0.1f, 0.9f))
+        ResizeMode.FLOATING -> Modifier
+            .width(resize.floatingWidth.dp)
+            .offset(x = resize.floatingX.dp, y = (-resize.floatingY).dp)
+        else -> Modifier.fillMaxWidth()
+    }
+
     Column(
         modifier = modifier
-            .fillMaxWidth()
+            .then(sizeModifier)
             .navigationBarsPadding()
             .background(palette.paper)
             .border(1.dp, palette.line)

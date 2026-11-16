@@ -58,6 +58,8 @@ object PrefKeys {
     // collide with the keyboard's other settings.
     val emojiHistory = stringPreferencesKey("pl.emoji.history")
     val emojiTone = stringPreferencesKey("pl.emoji.tone")
+    // Keyboard sizing (Resize Keyboard screen): one compact encoded string.
+    val resizeSettings = stringPreferencesKey("resizeSettings")
 }
 
 /**
@@ -145,7 +147,9 @@ data class KeyboardPrefs(
     // words only.
     val suggestEmojis: Boolean = true,
     // The skin tone applied to tone-capable emoji, or null for the default form.
-    val emojiTone: String? = null
+    val emojiTone: String? = null,
+    // Keyboard sizing (Resize Keyboard screen): mode + padding + per-mode size.
+    val resizeSettings: ResizeSettings = ResizeSettings.Default
 ) {
     /**
      * The strip above the keys hosts two unrelated things: the engine's word
@@ -195,7 +199,8 @@ class KeyboardPrefsRepository(private val context: Context) {
             hideWhenHardKeyboard = p[PrefKeys.hideWhenHardKeyboard] ?: false,
             autoCap = p[PrefKeys.autoCap] ?: true,
             suggestEmojis = p[PrefKeys.suggestEmojis] ?: true,
-            emojiTone = p[PrefKeys.emojiTone]
+            emojiTone = p[PrefKeys.emojiTone],
+            resizeSettings = ResizeSettings.decode(p[PrefKeys.resizeSettings])
         )
     }
 
@@ -248,6 +253,10 @@ class KeyboardPrefsRepository(private val context: Context) {
             if (tone == null) prefs.remove(PrefKeys.emojiTone)
             else prefs[PrefKeys.emojiTone] = tone
         }
+    }
+
+    suspend fun setResizeSettings(settings: ResizeSettings) {
+        context.keyboardDataStore.edit { it[PrefKeys.resizeSettings] = settings.encode() }
     }
 
     suspend fun setBool(key: String, value: Boolean) {

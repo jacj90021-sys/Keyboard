@@ -263,6 +263,7 @@ class PaperLimeInputMethodService : InputMethodService(),
                 PaperLimeKeyboardView(
                     palette = palette,
                     prefs = p,
+                    resize = p.resizeSettings,
                     autoShiftWanted = autoShift.wanted,
                     autoShiftEpoch = autoShift.epoch,
                     clipboardClips = clips,

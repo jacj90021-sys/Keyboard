@@ -18,8 +18,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -50,13 +52,14 @@ import kotlinx.coroutines.delay
  * settings rows (display-name locale + subtype labels), then renders one plain
  * text block per language — name, an optional "New" badge, and its current
  * layout — with no cards, borders or per-language gear icons. Two full-width
- * buttons sit below the list: "+ Add Keyboard Layout" opens the layout picker,
- * and "+ Add languages" opens the bottom sheet that appends a new language.
+ * buttons sit below the list: "Add Keyboard Layout" opens the layout picker,
+ * and "Add languages" opens the full-screen picker that appends a new language.
+ * An Edit toggle in the top bar turns each row into a checkbox for deletion.
  */
 
-private enum class LangScreen { MAIN, ADD }
+private enum class LangScreen { MAIN, ADD, ADD_LANGUAGE }
 
-private enum class LangSheet { LOCALE, ADD_LANGUAGE }
+private enum class LangSheet { LOCALE }
 
 private enum class NameLocale(val label: String) {
     SYSTEM("System locale"),
@@ -88,22 +91,30 @@ private data class Subtype(
     val isNew: Boolean = false
 )
 
-/** A language the user can add from the bottom sheet, with the layout it
- *  starts on. */
-private data class LanguageOption(
+/** A language the user can add, with the layout it starts on. Shared with the
+ *  full-screen AddLanguageScreen. */
+internal data class LanguageOption(
     val name: String,
+    val nativeName: String,
     val defaultLayout: String
 )
 
-private val languageOptions = listOf(
-    LanguageOption("Spanish (ES)", "QWERTY"),
-    LanguageOption("French (FR)", "AZERTY"),
-    LanguageOption("German (DE)", "QWERTZ"),
-    LanguageOption("Italian (IT)", "QWERTY"),
-    LanguageOption("Portuguese (BR)", "QWERTY"),
-    LanguageOption("Russian (RU)", "QWERTY"),
-    LanguageOption("Arabic (AR)", "QWERTY"),
-    LanguageOption("Hindi (IN)", "QWERTY")
+internal val languageOptions = listOf(
+    LanguageOption("Spanish (ES)", "Español", "QWERTY"),
+    LanguageOption("French (FR)", "Français", "AZERTY"),
+    LanguageOption("German (DE)", "Deutsch", "QWERTZ"),
+    LanguageOption("Italian (IT)", "Italiano", "QWERTY"),
+    LanguageOption("Portuguese (BR)", "Português", "QWERTY"),
+    LanguageOption("Russian (RU)", "Русский", "QWERTY"),
+    LanguageOption("Arabic (AR)", "العربية", "QWERTY"),
+    LanguageOption("Hindi (IN)", "हिन्दी", "QWERTY"),
+    LanguageOption("Japanese (JA)", "日本語", "QWERTY"),
+    LanguageOption("Korean (KR)", "한국어", "QWERTY"),
+    LanguageOption("Chinese (CN)", "中文", "QWERTY"),
+    LanguageOption("Dutch (NL)", "Nederlands", "QWERTY"),
+    LanguageOption("Turkish (TR)", "Türkçe", "QWERTY"),
+    LanguageOption("Polish (PL)", "Polski", "QWERTZ"),
+    LanguageOption("Swedish (SV)", "Svenska", "QWERTY")
 )
 
 private val SheetBg = Color(0xFFF6F6F4)
@@ -123,6 +134,8 @@ fun LanguagesLayoutsScreen(onBack: () -> Unit) {
     }
     var sheetKind by remember { mutableStateOf(LangSheet.LOCALE) }
     var sheetVisible by remember { mutableStateOf(false) }
+    var isEditMode by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(emptySet<String>()) }
 
     var toastText by remember { mutableStateOf<String?>(null) }
     var toastVisible by remember { mutableStateOf(false) }
@@ -195,16 +208,19 @@ fun LanguagesLayoutsScreen(onBack: () -> Unit) {
                                 .clip(CircleShape)
                                 .background(Tokens.Chip)
                                 .clickable {
-                                    if (subtypes.any { it.isNew }) {
-                                        subtypes = subtypes.map { it.copy(isNew = false) }
-                                        showToast("New languages acknowledged")
+                                    if (isEditMode) {
+                                        subtypes = subtypes.filter { it.name !in selected }
+                                        selected = emptySet()
+                                        isEditMode = false
+                                    } else {
+                                        isEditMode = true
                                     }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit",
+                                imageVector = if (isEditMode) Icons.Default.Delete else Icons.Default.Edit,
+                                contentDescription = if (isEditMode) "Delete" else "Edit",
                                 tint = Tokens.Ink,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -229,14 +245,21 @@ fun LanguagesLayoutsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(26.dp))
 
                     subtypes.forEach { subtype ->
-                        LanguageBlock(subtype)
+                        LanguageBlock(
+                            subtype = subtype,
+                            isEditMode = isEditMode,
+                            selected = subtype.name in selected,
+                            onToggle = {
+                                selected = if (subtype.name in selected) selected - subtype.name else selected + subtype.name
+                            }
+                        )
                         Spacer(Modifier.height(16.dp))
                     }
 
                     Spacer(Modifier.height(10.dp))
 
                     SurfaceActionButton(
-                        text = "+ Add Keyboard Layout",
+                        text = "Add Keyboard Layout",
                         icon = Icons.Default.Add,
                         onClick = {
                             pendingLayout = subtypes.firstOrNull()?.layout ?: "QWERTY"
@@ -245,9 +268,9 @@ fun LanguagesLayoutsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(12.dp))
                     LimeActionButton(
-                        text = "+ Add languages",
+                        text = "Add languages",
                         icon = Icons.Default.Add,
-                        onClick = { sheetKind = LangSheet.ADD_LANGUAGE; sheetVisible = true }
+                        onClick = { screen = LangScreen.ADD_LANGUAGE }
                     )
                 }
 
@@ -262,6 +285,18 @@ fun LanguagesLayoutsScreen(onBack: () -> Unit) {
                         screen = LangScreen.MAIN
                         showToast("Layout applied")
                     }
+                )
+
+                LangScreen.ADD_LANGUAGE -> AddLanguageScreen(
+                    existing = subtypes.map { it.name }.toSet(),
+                    onPick = { option ->
+                        if (option.name !in subtypes.map { it.name }) {
+                            subtypes = subtypes + Subtype(option.name, option.defaultLayout, isNew = true)
+                            showToast("${option.name} added")
+                        }
+                        screen = LangScreen.MAIN
+                    },
+                    onBack = { screen = LangScreen.MAIN }
                 )
             }
 
@@ -332,18 +367,6 @@ fun LanguagesLayoutsScreen(onBack: () -> Unit) {
                     },
                     onClose = { sheetVisible = false }
                 )
-
-                LangSheet.ADD_LANGUAGE -> AddLanguageSheet(
-                    existing = subtypes.map { it.name },
-                    onPick = { option ->
-                        if (subtypes.none { it.name == option.name }) {
-                            subtypes = subtypes + Subtype(option.name, option.defaultLayout, isNew = true)
-                            showToast("${option.name} added")
-                        }
-                        sheetVisible = false
-                    },
-                    onClose = { sheetVisible = false }
-                )
             }
         }
     }
@@ -354,32 +377,48 @@ fun LanguagesLayoutsScreen(onBack: () -> Unit) {
 // ---------------------------------------------------------------------------
 
 /** One plain text block: name (with optional "New" badge) and its layout. No
- *  card, no border, no gear icon. */
+ *  card, no border, no gear icon. In edit mode a checkbox appears on the right. */
 @Composable
-private fun LanguageBlock(subtype: Subtype) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = subtype.name,
-                color = Tokens.Ink,
-                fontFamily = Manrope,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 17.sp,
-                letterSpacing = (-0.3).sp
-            )
-            if (subtype.isNew) {
-                Spacer(Modifier.width(8.dp))
-                NewBadge()
+private fun LanguageBlock(
+    subtype: Subtype,
+    isEditMode: Boolean,
+    selected: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = subtype.name,
+                    color = Tokens.Ink,
+                    fontFamily = Manrope,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 17.sp,
+                    letterSpacing = (-0.3).sp
+                )
+                if (subtype.isNew) {
+                    Spacer(Modifier.width(8.dp))
+                    NewBadge()
+                }
             }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "Layout: ${subtype.layout}",
+                color = Tokens.Muted,
+                fontFamily = DmSans,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp
+            )
         }
-        Spacer(Modifier.height(3.dp))
-        Text(
-            text = "Layout: ${subtype.layout}",
-            color = Tokens.Muted,
-            fontFamily = DmSans,
-            fontWeight = FontWeight.Medium,
-            fontSize = 13.sp
-        )
+        if (isEditMode) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = { onToggle() }
+            )
+        }
     }
 }
 
@@ -649,48 +688,6 @@ private fun LocaleSheet(
             subtitle = "Always show names in English",
             onClick = { onPick(NameLocale.APP) }
         )
-
-        Spacer(Modifier.height(14.dp))
-        SurfaceActionButton(text = "Close", icon = null, onClick = onClose)
-    }
-}
-
-@Composable
-private fun AddLanguageSheet(
-    existing: List<String>,
-    onPick: (LanguageOption) -> Unit,
-    onClose: () -> Unit
-) {
-    SheetPanel {
-        SheetGrab()
-        SheetTitle("Add languages")
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Choose a language to add to your keyboard.",
-            color = Tokens.Muted,
-            fontFamily = DmSans,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.5.sp
-        )
-        Spacer(Modifier.height(10.dp))
-
-        languageOptions.forEach { option ->
-            val added = option.name in existing
-            LangRow(
-                title = option.name,
-                subtitle = if (added) "Already added" else "Layout: ${option.defaultLayout}",
-                trailing = {
-                    Icon(
-                        imageVector = if (added) Icons.Default.Check else Icons.Default.Add,
-                        contentDescription = null,
-                        tint = if (added) Tokens.Muted else Tokens.Ink,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                onClick = if (added) null else { { onPick(option) } }
-            )
-            LangDivider()
-        }
 
         Spacer(Modifier.height(14.dp))
         SurfaceActionButton(text = "Close", icon = null, onClick = onClose)
@@ -975,7 +972,7 @@ private fun FloatingKeyboardButton(modifier: Modifier = Modifier, onClick: () ->
 }
 
 @Composable
-private fun BackCircle(onClick: () -> Unit) {
+internal fun BackCircle(onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(38.dp)
