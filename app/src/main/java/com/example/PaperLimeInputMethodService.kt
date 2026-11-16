@@ -195,7 +195,7 @@ class PaperLimeInputMethodService : InputMethodService(),
         // during construction: the service base context is not attached yet.
         // Trigger them here and seed the flows the UI collects.
         _clipboardItems.value = clipboardHistory.items()
-        _recentEmojs.value = emojiRecents.entries()
+        _recentEmojis.value = emojiRecents.entries()
 
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
