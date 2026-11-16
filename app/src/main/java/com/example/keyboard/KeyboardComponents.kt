@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1105,8 +1106,10 @@ fun ClipboardListPanel(
     onDelete: (ClipItem) -> Unit,
     onTogglePin: (ClipItem) -> Unit
 ) {
+    var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<ClipItem?>(null) }
+    var showClear by remember { mutableStateOf(false) }
 
     val visible = remember(clips, query, pinnedFirst) {
         val filtered = if (query.isBlank()) clips
@@ -1123,22 +1126,57 @@ fun ClipboardListPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .height(40.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (searching) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    placeholder = { Text("Search clips", fontSize = 13.sp) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = palette.inkSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            searching = false
+                            query = ""
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close search",
+                                tint = palette.inkSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    },
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = palette.lime,
+                        unfocusedBorderColor = palette.line,
+                        focusedTextColor = palette.ink,
+                        unfocusedTextColor = palette.ink
+                    )
+                )
+            } else {
                 IconButton(
                     onClick = onClose,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .testTag("clipboard:back")
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = palette.ink,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
                 Text(
@@ -1148,36 +1186,31 @@ fun ClipboardListPanel(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 4.dp)
                 )
-            }
-            TextButton(onClick = onClearAll) {
-                Text("Clear All", color = palette.inkSecondary, fontSize = 11.sp)
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = { searching = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = palette.ink,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { showClear = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear",
+                        tint = palette.ink,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            singleLine = true,
-            placeholder = { Text("Search clips", fontSize = 12.sp) },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    tint = palette.inkSecondary,
-                    modifier = Modifier.size(18.dp)
-                )
-            },
-            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = palette.lime,
-                unfocusedBorderColor = palette.line,
-                focusedTextColor = palette.ink,
-                unfocusedTextColor = palette.ink
-            )
-        )
 
         if (visible.isEmpty()) {
             Box(
@@ -1185,18 +1218,18 @@ fun ClipboardListPanel(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (clips.isEmpty()) "No clipboard items yet" else "No matches",
+                    text = if (clips.isEmpty()) "No clipboard items yet" else "No clips found",
                     color = palette.muted,
                     fontSize = 13.sp
                 )
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Adaptive(minSize = 140.dp),
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 8.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                contentPadding = PaddingValues(bottom = 4.dp)
             ) {
                 items(visible, key = { it.text }) { item ->
                     ClipboardCard(
@@ -1231,6 +1264,29 @@ fun ClipboardListPanel(
             }
         )
     }
+
+    if (showClear) {
+        AlertDialog(
+            onDismissRequest = { showClear = false },
+            title = { Text("Clear clipboard") },
+            text = {
+                Column {
+                    Text("Choose what to remove.")
+                    TextButton(onClick = {
+                        clips.filter { !it.pinned }.forEach { onDelete(it) }
+                        showClear = false
+                    }) { Text("Clear unpinned") }
+                    TextButton(onClick = {
+                        onClearAll()
+                        showClear = false
+                    }) { Text("Clear all") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showClear = false }) { Text("Close") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1246,53 +1302,50 @@ private fun ClipboardCard(
             .fillMaxWidth()
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
+                indication = ripple(),
                 onClick = { onPaste(item) },
                 onLongClick = { onTogglePin(item) }
             ),
-        shape = RoundedCornerShape(12.dp),
-        color = if (item.pinned) palette.keyBg else palette.paper,
-        border = BorderStroke(1.dp, if (item.pinned) palette.lime else palette.line)
+        shape = RoundedCornerShape(8.dp),
+        color = if (item.pinned) palette.lime.copy(alpha = 0.16f) else palette.keyBg,
+        border = BorderStroke(1.dp, palette.line)
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Text(
-                text = item.text,
-                color = palette.ink,
-                fontSize = 13.sp,
-                maxLines = 5,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = relativeTime(item.createdAt),
-                    color = palette.muted,
-                    fontSize = 10.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                if (item.pinned) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = "Pinned",
-                        tint = palette.lime,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
+        Column {
+            Row(modifier = Modifier.fillMaxWidth()) {
                 IconButton(
-                    onClick = { onRequestDelete(item) },
-                    modifier = Modifier.size(28.dp)
+                    onClick = { onTogglePin(item) },
+                    modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = if (item.pinned) "Unpin" else "Pin",
+                        tint = if (item.pinned) palette.lime else palette.inkSecondary.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .size(16.dp)
+                            .rotate(if (item.pinned) 0f else 45f)
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = { onRequestDelete(item) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
                         contentDescription = "Delete",
                         tint = palette.inkSecondary,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
+            Text(
+                text = item.text,
+                color = palette.ink,
+                fontSize = 12.sp,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+            )
         }
     }
 }
