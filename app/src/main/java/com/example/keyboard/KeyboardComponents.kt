@@ -22,6 +22,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -52,7 +53,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1147,40 +1150,46 @@ fun ClipboardListPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (searching) {
-                OutlinedTextField(
+                BasicTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.weight(1f),
                     singleLine = true,
-                    placeholder = { Text("Search clips", fontSize = 13.sp) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = palette.inkSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = {
-                            searching = false
-                            query = ""
-                        }) {
+                    textStyle = TextStyle(fontSize = 14.sp, color = palette.ink),
+                    cursorBrush = SolidColor(palette.lime),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp),
+                    decorationBox = { inner ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(palette.keyBg)
+                                .border(1.dp, palette.lime, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close search",
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
                                 tint = palette.inkSecondary,
                                 modifier = Modifier.size(18.dp)
                             )
+                            Spacer(Modifier.width(6.dp))
+                            Box(Modifier.weight(1f)) { inner() }
+                            IconButton(onClick = {
+                                searching = false
+                                query = ""
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close search",
+                                    tint = palette.inkSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
-                    },
-                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = palette.lime,
-                        unfocusedBorderColor = palette.line,
-                        focusedTextColor = palette.ink,
-                        unfocusedTextColor = palette.ink
-                    )
+                    }
                 )
             } else {
                 IconButton(
@@ -1283,20 +1292,42 @@ fun ClipboardListPanel(
     }
 
     if (showClear) {
+        val unpinned = clips.filter { !it.pinned }
+        val pinned = clips.filter { it.pinned }
+        val title = when {
+            clips.isEmpty() -> "Clear clipboard"
+            unpinned.isEmpty() -> "Unpin all"
+            else -> "Clear unpinned"
+        }
+        val body = when {
+            clips.isEmpty() -> "There are no clips to clear."
+            unpinned.isEmpty() -> "All clips are pinned. Unpin them to clear the history."
+            else -> "Pinned clips will be kept."
+        }
         AlertDialog(
             onDismissRequest = { showClear = false },
-            title = { Text("Clear clipboard") },
+            title = { Text(title) },
             text = {
                 Column {
-                    Text("Choose what to remove.")
-                    TextButton(onClick = {
-                        clips.filter { !it.pinned }.forEach { onDelete(it) }
-                        showClear = false
-                    }) { Text("Clear unpinned") }
-                    TextButton(onClick = {
-                        onClearAll()
-                        showClear = false
-                    }) { Text("Clear all") }
+                    Text(body)
+                    if (clips.isNotEmpty() && unpinned.isEmpty()) {
+                        TextButton(onClick = {
+                            pinned.forEach { onTogglePin(it) }
+                            showClear = false
+                        }) { Text("Unpin all") }
+                    }
+                    if (unpinned.isNotEmpty()) {
+                        TextButton(onClick = {
+                            unpinned.forEach { onDelete(it) }
+                            showClear = false
+                        }) { Text("Clear unpinned") }
+                    }
+                    if (clips.isNotEmpty()) {
+                        TextButton(onClick = {
+                            onClearAll()
+                            showClear = false
+                        }) { Text("Clear all") }
+                    }
                 }
             },
             confirmButton = {
