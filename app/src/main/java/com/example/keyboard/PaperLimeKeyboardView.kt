@@ -347,11 +347,8 @@ fun PaperLimeKeyboardView(
     // vacated, so the keyboard does not jump height when the picker opens.
     // Overlays replace the whole keyboard content (toolbar + strip + board), so
     // they are sized against the full content height, not just the board.
-    val navBarBottomPx = with(density) {
-        WindowInsets.navigationBars.getBottom(density).toPx()
-    }
     val overlayHeight = if (contentHeightPx > 0) {
-        with(density) { (contentHeightPx - navBarBottomPx - 8.dp.toPx()).toDp() }
+        with(density) { contentHeightPx.toDp() }
     } else {
         300.dp
     }
@@ -390,14 +387,19 @@ fun PaperLimeKeyboardView(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .onSizeChanged {
-                if (overlay == OverlayView.NONE) contentHeightPx = it.height
-            }
             .navigationBarsPadding()
             .background(palette.paper)
             .border(1.dp, palette.line)
             .padding(horizontal = 4.dp, vertical = 4.dp)
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onSizeChanged {
+                    if (overlay == OverlayView.NONE) contentHeightPx = it.height
+                }
+        ) {
+            Column {
         // Floating Toolbar Overlay - placed at the top above suggestions.
         // Swapped in with a plain `if`, not AnimatedVisibility: the bar appears
         // in the same frame the chevron is tapped, and our old slide+fade (~300ms
@@ -700,6 +702,8 @@ fun PaperLimeKeyboardView(
                         }
                     }
                 }
+            }
+        }
             }
         }
     }

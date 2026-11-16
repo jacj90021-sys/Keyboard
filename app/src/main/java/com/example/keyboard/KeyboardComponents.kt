@@ -34,9 +34,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.staggered.LazyVerticalStaggeredGrid
-import androidx.compose.foundation.lazy.staggered.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggered.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1194,8 +1191,8 @@ fun ClipboardListPanel(
                 )
             }
         } else {
-            LazyVerticalStaggeredGrid(
-                columns = StaggeredGridCells.Fixed(2),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
                 verticalItemSpacing = 8.dp,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
