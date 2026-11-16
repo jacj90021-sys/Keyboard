@@ -113,7 +113,7 @@ class PaperLimeInputMethodService : InputMethodService(),
     // Android only hands out the *current* primary clip, so the keyboard keeps
     // its own bounded history, captured while the IME view is visible (see
     // ClipboardHistory for the rules).
-    private val clipboardHistory = ClipboardHistory(this) { lifecycleScope }
+    private val clipboardHistory = ClipboardHistory(this, scope = { lifecycleScope })
     private val _clipboardItems = MutableStateFlow(clipboardHistory.items())
     val clipboardItems: StateFlow<List<ClipItem>> = _clipboardItems.asStateFlow()
     private var clipboardListenerRegistered = false
@@ -142,7 +142,7 @@ class PaperLimeInputMethodService : InputMethodService(),
 
     // Emoji recents: session-scoped like the clipboard history above. The
     // picker opens on a Recent tab, and this is what feeds ours.
-    private val emojiRecents = EmojiRecents(this) { lifecycleScope }
+    private val emojiRecents = EmojiRecents(this, scope = { lifecycleScope })
     private val _recentEmojis = MutableStateFlow<List<String>>(emptyList())
     val recentEmojis: StateFlow<List<String>> = _recentEmojis.asStateFlow()
     private fun recordEmoji(emoji: String) {
