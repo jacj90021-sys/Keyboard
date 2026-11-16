@@ -18,7 +18,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -49,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -133,20 +137,26 @@ private fun keyGestureModifier(
         }
     }
 
-    return if (onRepeat != null) {
-        // The action is driven entirely by the interaction collector above, so
-        // the click callback stays empty to avoid deleting twice per tap.
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = {}
-        )
-    } else {
-        Modifier.combinedClickable(
+    return when {
+        onRepeat != null -> {
+            // The action is driven entirely by the interaction collector above, so
+            // the click callback stays empty to avoid deleting twice per tap.
+            Modifier.clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {}
+            )
+        }
+        onLongClick != null -> Modifier.combinedClickable(
             interactionSource = interactionSource,
             indication = null,
             onClick = onClick,
             onLongClick = onLongClick
+        )
+        else -> Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
         )
     }
 }
@@ -170,7 +180,7 @@ fun SoftKey(
     onRepeat: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    var isPressed by remember { mutableStateOf(false) }
 
     // KEEP the previous behaviour: pressing ANY key fills it with the lime accent so
     // there is always a clear colour flash on key press.
@@ -182,11 +192,6 @@ fun SoftKey(
     val bgColor = when {
         isAccent -> palette.lime
         else -> palette.keyBg
-    }
-
-    val shadowColor = when {
-        isArmed || style == KeyStyle.LIME -> palette.limeShadow
-        else -> palette.keyShadow
     }
 
     val textColor = when {
@@ -206,18 +211,18 @@ fun SoftKey(
                 .fillMaxWidth()
                 .height(keyHeight)
                 .padding(horizontal = 1.dp)
-                .offset(y = if (isPressed) 2.dp else 0.dp)
-                .drawBehind {
-                    if (!isPressed) {
-                        // 3D key shadow depth effect
-                        drawRoundRect(
-                            color = shadowColor,
-                            topLeft = Offset(0f, size.height - 2.dp.toPx()),
-                            size = androidx.compose.ui.geometry.Size(size.width, 2.dp.toPx()),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx())
-                        )
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown()
+                        isPressed = true
+                        waitForUpOrCancellation()
+                        isPressed = false
                     }
                 }
+                .graphicsLayer {
+                    translationY = if (isPressed) 2.dp.toPx() else 0f
+                }
+                .shadow(1.dp, shape)
                 .clip(shape)
                 .background(bgColor)
                 .then(
@@ -307,7 +312,8 @@ fun SuggestionsBar(
     showChevron: Boolean,
     onToggleExpand: () -> Unit,
     onSuggestionClick: (String) -> Unit,
-    suggestionsOverride: List<String> = emptyList()
+    suggestionsOverride: List<String> = emptyList(),
+    loading: Boolean = false
 ) {
     val suggestions = visibleSuggestions(suggestionsOverride, isFnMode)
 
@@ -342,6 +348,14 @@ fun SuggestionsBar(
             }
         }
 
+        if (loading) {
+            Text(
+                text = "Loading suggestions…",
+                color = palette.muted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        } else {
         // Suggestion Chips
         suggestions.forEach { word ->
             Box(
@@ -368,6 +382,7 @@ fun SuggestionsBar(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
         }
     }
 }
