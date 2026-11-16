@@ -508,6 +508,7 @@ fun PaperLimeKeyboardView(
                 OverlayView.ALL_ACTIONS -> {
                     AllActionsGrid(
                         palette = palette,
+                        panelHeight = overlayHeight,
                         onClose = { overlay = OverlayView.NONE },
                         onActionClick = { actionId ->
                             when (actionId) {
@@ -580,6 +581,7 @@ fun PaperLimeKeyboardView(
                 OverlayView.VOICE -> {
                     VoiceInputOverlay(
                         palette = palette,
+                        panelHeight = overlayHeight,
                         state = voiceInput,
                         onStop = onStopVoice,
                         onClose = { overlay = OverlayView.NONE }

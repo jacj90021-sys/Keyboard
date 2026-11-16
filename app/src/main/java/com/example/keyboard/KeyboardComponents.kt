@@ -497,6 +497,7 @@ fun ToolbarIconButton(
 @Composable
 fun VoiceInputOverlay(
     palette: KeyboardPalette,
+    panelHeight: Dp,
     state: VoiceInputState,
     onStop: () -> Unit,
     onClose: () -> Unit,
@@ -524,7 +525,7 @@ fun VoiceInputOverlay(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(230.dp)
+            .height(panelHeight)
             .padding(horizontal = 8.dp)
             .testTag("voice:overlay"),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -697,6 +698,7 @@ val allActionCards: List<ActionCardItem> = listOf(
 @Composable
 fun AllActionsGrid(
     palette: KeyboardPalette,
+    panelHeight: Dp,
     onClose: () -> Unit,
     onActionClick: (String) -> Unit
 ) {
@@ -705,7 +707,7 @@ fun AllActionsGrid(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(260.dp)
+            .height(panelHeight)
             .padding(horizontal = 4.dp)
     ) {
         Row(
