@@ -23,6 +23,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -33,6 +34,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggered.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggered.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggered.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1107,8 +1111,6 @@ fun ClipboardListPanel(
     var query by rememberSaveable { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<ClipItem?>(null) }
 
-    // Filtering is by substring; pinned-first sorting is stable, so the
-    // newest-first order inside each group is preserved.
     val visible = remember(clips, query, pinnedFirst) {
         val filtered = if (query.isBlank()) clips
         else clips.filter { it.text.contains(query.trim(), ignoreCase = true) }
@@ -1160,7 +1162,7 @@ fun ClipboardListPanel(
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp),
+                .padding(bottom = 8.dp),
             singleLine = true,
             placeholder = { Text("Search clips", fontSize = 12.sp) },
             leadingIcon = {
@@ -1192,68 +1194,23 @@ fun ClipboardListPanel(
                 )
             }
         } else {
-            LazyColumn(
+            LazyVerticalStaggeredGrid(
+                columns = StaggeredGridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(bottom = 6.dp)
+                verticalItemSpacing = 8.dp,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 8.dp)
             ) {
                 items(visible, key = { it.text }) { item ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(palette.keyBg)
-                            .border(1.dp, palette.line, RoundedCornerShape(8.dp))
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { onPaste(item) },
-                                onLongClick = { onTogglePin(item) }
-                            )
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = item.text,
-                                color = palette.ink,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            val stamp = relativeTime(item.createdAt)
-                            if (stamp.isNotEmpty()) {
-                                Text(
-                                    text = stamp,
-                                    color = palette.muted,
-                                    fontSize = 10.sp
-                                )
-                            }
+                    ClipboardCard(
+                        palette = palette,
+                        item = item,
+                        onPaste = onPaste,
+                        onTogglePin = onTogglePin,
+                        onRequestDelete = { target ->
+                            if (confirmDelete) pendingDelete = target else onDelete(target)
                         }
-                        if (item.pinned) {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = "Pinned",
-                                tint = palette.limeShadow,
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .padding(end = 4.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                if (confirmDelete) pendingDelete = item else onDelete(item)
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete clip",
-                                tint = palette.inkSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
+                    )
                 }
             }
         }
@@ -1276,6 +1233,70 @@ fun ClipboardListPanel(
                 TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
             }
         )
+    }
+}
+
+@Composable
+private fun ClipboardCard(
+    palette: KeyboardPalette,
+    item: ClipItem,
+    onPaste: (ClipItem) -> Unit,
+    onTogglePin: (ClipItem) -> Unit,
+    onRequestDelete: (ClipItem) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { onPaste(item) },
+                onLongClick = { onTogglePin(item) }
+            ),
+        shape = RoundedCornerShape(12.dp),
+        color = if (item.pinned) palette.keyBg else palette.paper,
+        border = BorderStroke(1.dp, if (item.pinned) palette.lime else palette.line)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Text(
+                text = item.text,
+                color = palette.ink,
+                fontSize = 13.sp,
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = relativeTime(item.createdAt),
+                    color = palette.muted,
+                    fontSize = 10.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                if (item.pinned) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = "Pinned",
+                        tint = palette.lime,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { onRequestDelete(item) },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = palette.inkSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

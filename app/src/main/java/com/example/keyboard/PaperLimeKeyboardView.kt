@@ -131,6 +131,10 @@ fun PaperLimeKeyboardView(
     // the emoji panel can take the same footprint. Only captured with no overlay
     // open, so the panel cannot feed its own size back into it.
     var keyboardAreaHeightPx by remember { mutableStateOf(0) }
+    // Full height of the keyboard content (toolbar + strip + board) while no
+    // overlay is open. Overlays are sized against this so they replace the
+    // whole keyboard instead of only the board.
+    var contentHeightPx by remember { mutableStateOf(0) }
     // Suggestions run on a background dispatcher: the query used to resolve
     // during composition, blocking the frame (next-word ranking alone cost ~9 ms
     // on the first keystroke of every word). produceState restarts when the
@@ -341,13 +345,16 @@ fun PaperLimeKeyboardView(
 
     // The emoji panel takes the board's footprint plus the row the toolbar just
     // vacated, so the keyboard does not jump height when the picker opens.
-    val emojiPanelHeight = if (keyboardAreaHeightPx > 0) {
-        with(density) { keyboardAreaHeightPx.toDp() } + 40.dp
+    // Overlays replace the whole keyboard content (toolbar + strip + board), so
+    // they are sized against the full content height, not just the board.
+    val navBarBottomPx = with(density) {
+        WindowInsets.navigationBars.getBottom(density).toPx()
+    }
+    val overlayHeight = if (contentHeightPx > 0) {
+        with(density) { (contentHeightPx - navBarBottomPx - 8.dp.toPx()).toDp() }
     } else {
         300.dp
     }
-    // The clipboard panel uses the same footprint as the emoji picker.
-    val clipboardPanelHeight = emojiPanelHeight
 
     // Gesture typing runs only on the live letter board, never in a preview, an
     // overlay, before the dictionary has loaded, or when the user turned it off.
@@ -383,6 +390,9 @@ fun PaperLimeKeyboardView(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .onSizeChanged {
+                if (overlay == OverlayView.NONE) contentHeightPx = it.height
+            }
             .navigationBarsPadding()
             .background(palette.paper)
             .border(1.dp, palette.line)
@@ -538,7 +548,7 @@ fun PaperLimeKeyboardView(
                     EmojiPickerGrid(
                         palette = palette,
                         recentEmojis = recentEmojis,
-                        panelHeight = emojiPanelHeight,
+                        panelHeight = overlayHeight,
                         activeTone = prefs.emojiTone,
                         onClose = { overlay = OverlayView.NONE },
                         onBackspace = trackedDelete,
@@ -554,7 +564,7 @@ fun PaperLimeKeyboardView(
                     ClipboardListPanel(
                         palette = palette,
                         clips = clipboardClips,
-                        panelHeight = clipboardPanelHeight,
+                        panelHeight = overlayHeight,
                         pinnedFirst = prefs.clipboardPinnedFirst,
                         confirmDelete = prefs.clipboardConfirmDelete,
                         onClose = { overlay = OverlayView.NONE },
