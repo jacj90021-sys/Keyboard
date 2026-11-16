@@ -2,6 +2,8 @@
 
 package com.example.keyboard
 
+import android.util.Log
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -184,6 +186,9 @@ fun SoftKey(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     var isPressed by remember { mutableStateOf(false) }
+    LaunchedEffect(isPressed, showPopup) {
+        if (showPopup) Log.d("KeyPopup", "key=$text pressed=$isPressed")
+    }
 
     // KEEP the previous behaviour: pressing ANY key fills it with the lime accent so
     // there is always a clear colour flash on key press.
